@@ -7,12 +7,32 @@ from rdkit.Chem import rdMolDescriptors
 class Formula:
     def __init__(self, elements: Dict[str, int], charge: int, raw_formula: str = ""):
         # OrderedDict to preserve Hill order: C, H, then alphabetical
-        self.elements: OrderedDict[str, int]
-        self.charge: int = charge
-        self.raw_formula: str = raw_formula
+        self._elements: OrderedDict[str, int]
+        self._charge: int = charge
+        self._raw_formula: str = raw_formula
 
         self._reorder_elements(elements.copy())
-        
+
+    @property
+    def elements(self) -> Dict[str, int]:
+        """
+        Return a dictionary of elements and their counts.
+        """
+        return OrderedDict(self._elements)
+
+    @property
+    def charge(self) -> int:
+        """
+        Return the net charge of the formula.
+        """
+        return self._charge
+    
+    @property
+    def raw_formula(self) -> str:
+        """
+        Return the raw formula string as provided during initialization.
+        """
+        return self._raw_formula
 
     @property
     def exact_mass(self) -> float:
@@ -20,7 +40,7 @@ class Formula:
         Calculate the exact mass of the formula.
         """
         mass = 0.0
-        for elem, count in self.elements.items():
+        for elem, count in self._elements.items():
             atomic_number = Chem.GetPeriodicTable().GetAtomicNumber(elem)
             mass += Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atomic_number) * count
         return mass
@@ -33,7 +53,7 @@ class Formula:
         return self.to_string(no_charge=False)
     
     def __hash__(self) -> int:
-        return hash((frozenset(self.elements.items()), self.raw_formula, self.charge))
+        return hash((frozenset(self._elements.items()), self._raw_formula, self._charge))
 
     def _parse_formula(self, formula: str):
         """
@@ -44,11 +64,11 @@ class Formula:
         if charge_match:
             charge_str = charge_match.group(1)
             formula = formula[: -len(charge_str)]
-            self.charge = int(charge_str[1:]) if charge_str[1:] else 1
+            self._charge = int(charge_str[1:]) if charge_str[1:] else 1
             if charge_str[0] == '-':
-                self.charge *= -1
+                self._charge *= -1
 
-        self.raw_formula = formula  # Store the raw formula for reference
+        self._raw_formula = formula  # Store the raw formula for reference
 
         # Parse element counts
         matches = re.findall(r"([+-]?)([A-Z][a-z]?)(\d*)", formula)
@@ -65,27 +85,27 @@ class Formula:
         ordered = Formula._reorder_element_keys(keys)
 
         # Store in ordered dict
-        self.elements = OrderedDict((k, temp[k]) for k in ordered)
+        self._elements = OrderedDict((k, temp[k]) for k in ordered)
 
     def __add__(self, other: 'Formula') -> 'Formula':
         result = Formula(elements={}, charge=0)
-        combined = dict(self.elements)
+        combined = dict(self._elements)
 
-        for elem, count in other.elements.items():
+        for elem, count in other._elements.items():
             combined[elem] = combined.get(elem, 0) + count
 
-        result.charge = self.charge + other.charge
+        result._charge = self._charge + other._charge
         result._reorder_elements(combined)
         return result
 
     def __sub__(self, other: 'Formula') -> 'Formula':
         result = Formula(elements={}, charge=0)
-        combined = dict(self.elements)
+        combined = dict(self._elements)
 
-        for elem, count in other.elements.items():
+        for elem, count in other._elements.items():
             combined[elem] = combined.get(elem, 0) - count
 
-        result.charge = self.charge - other.charge
+        result._charge = self._charge - other._charge
         result._reorder_elements(combined)
         return result
     
@@ -114,7 +134,7 @@ class Formula:
         keys = element_counts.keys()
         ordered = Formula._reorder_element_keys(keys)
 
-        self.elements = OrderedDict((k, element_counts[k]) for k in ordered if element_counts[k] != 0)
+        self._elements = OrderedDict((k, element_counts[k]) for k in ordered if element_counts[k] != 0)
 
     @staticmethod
     def _reorder_element_keys(elements: list[str]) -> OrderedDict:
@@ -136,7 +156,7 @@ class Formula:
 
     def to_string(self, no_charge: bool = False) -> str:
         parts = []
-        for elem, count in self.elements.items():
+        for elem, count in self._elements.items():
             if count > 0:
                 parts.append(f"{elem}{count if count != 1 else ''}")
             elif count < 0:
@@ -144,14 +164,14 @@ class Formula:
         formula = "".join(parts)
         
         if not no_charge:
-            if self.charge > 0:
-                formula += ("+" if self.charge == 1 else f"+{self.charge}")
-            elif self.charge < 0:
-                formula += ("-" if self.charge == -1 else f"-{-self.charge}")
+            if self._charge > 0:
+                formula += ("+" if self._charge == 1 else f"+{self._charge}")
+            elif self._charge < 0:
+                formula += ("-" if self._charge == -1 else f"-{-self._charge}")
         return formula
 
     def copy(self) -> 'Formula':
-        return Formula(self.elements, self.charge, self.raw_formula)
+        return Formula(self._elements, self._charge, self._raw_formula)
     
     @classmethod
     def from_str(self, formula_str: str) -> 'Formula':
@@ -166,8 +186,17 @@ class Formula:
     def from_mol(cls, mol: Chem.Mol) -> 'Formula':
         """
         Create a Formula object from an RDKit Mol object.
+        Includes implicit hydrogens by adding them explicitly.
         """
-        formula_str = rdMolDescriptors.CalcMolFormula(mol)
-        return cls(formula_str)
+        # Make a copy and add explicit hydrogens
+        mol_with_H = Chem.AddHs(mol)
 
-    
+        elements = {}
+        total_charge = 0
+
+        for atom in mol_with_H.GetAtoms():
+            symbol = atom.GetSymbol()
+            elements[symbol] = elements.get(symbol, 0) + 1
+            total_charge += atom.GetFormalCharge()
+
+        return cls(elements=elements, charge=total_charge)

@@ -78,9 +78,9 @@ class TestFormula(unittest.TestCase):
         f = Formula(OrderedDict([("O", 6), ("C", 6), ("H", 12)]),
                     charge=0, raw_formula="unordered")
         
-        self.assertEqual(list(f.elements.keys())[0], "C")  # "C" should appear first in Hill order
-        self.assertEqual(list(f.elements.keys())[1], "H")
-        self.assertEqual(list(f.elements.keys())[2], "O")
+        self.assertEqual(list(f._elements.keys())[0], "C")  # "C" should appear first in Hill order
+        self.assertEqual(list(f._elements.keys())[1], "H")
+        self.assertEqual(list(f._elements.keys())[2], "O")
 
     def test_copy(self):
         # Copy should create an equal but independent instance
