@@ -64,6 +64,27 @@ class TestAdduct(unittest.TestCase):
         self.assertEqual(diff["H"], -1)
         self.assertEqual(adduct.charge, 1)
 
+    def test_formula_property(self):
+        # [M+H]+ → formula should be H+
+        adduct1 = Adduct(mode="M", adducts_in=[self.h])
+        self.assertEqual(adduct1.formula.value, "H+")
+        self.assertEqual(adduct1.formula.charge, 1)
+
+        # [M-H2O] → formula should be -H2O
+        adduct2 = Adduct(mode="M", adducts_out=[self.h2o])
+        self.assertEqual(adduct2.formula.value, "-H2-O")
+        self.assertEqual(adduct2.formula.charge, 0)
+
+        # [M+Na+H] → formula should be NaH with +2 charge
+        adduct3 = Adduct(mode="M", adducts_in=[self.na, self.h])
+        self.assertEqual(adduct3.formula.value, "HNa+2")
+        self.assertEqual(adduct3.formula.charge, 2)
+
+        # [M+H2O-H2O] → cancels out, formula should be empty
+        adduct4 = Adduct(mode="M", adducts_in=[self.h2o], adducts_out=[self.h2o])
+        self.assertEqual(adduct4.formula.value, "")
+        self.assertEqual(adduct4.formula.charge, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

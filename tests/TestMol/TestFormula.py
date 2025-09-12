@@ -140,6 +140,35 @@ class TestFormula(unittest.TestCase):
         self.assertEqual(result3.value, "CH6O2",
                          msg="Mismatch in subtraction: H2O - (-(CH3OH))")
 
+    def test_multiplication(self):
+        # Water * 2 -> H4O2
+        water = self.formulas["H2O"]["formula"]
+        result = water * 2
+        self.assertEqual(result.value, "H4O2",
+                         msg="Mismatch in multiplication: H2O * 2")
+
+        # 3 * Glucose -> C18H36O18
+        glucose = self.formulas["C6H12O6"]["formula"]
+        result2 = 3 * glucose
+        self.assertEqual(result2.value, "C18H36O18",
+                         msg="Mismatch in multiplication: 3 * Glucose")
+
+        # Sodium ion * 2 -> Na2+2
+        sodium = self.formulas["Na+"]["formula"]
+        result3 = sodium * 2
+        self.assertEqual(result3.value, "Na2+2",
+                         msg="Mismatch in multiplication: Na+ * 2")
+
+        # Negative group (-CH3OH) * 2 -> -C2-H8-O2
+        negative = self.formulas["-C-H4-O"]["formula"]
+        result4 = negative * 2
+        self.assertEqual(result4.value, "-C2-H8-O2",
+                         msg="Mismatch in multiplication: (-(CH3OH)) * 2")
+
+        # Multiplying by 1 should return the same formula
+        result5 = glucose * 1
+        self.assertEqual(result5.value, glucose.value,
+                         msg="Mismatch in multiplication: Glucose * 1")
 
 if __name__ == "__main__":
     unittest.main()

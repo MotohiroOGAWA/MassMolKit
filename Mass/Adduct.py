@@ -38,6 +38,19 @@ class Adduct:
         self._charge = charge + charge_diff
 
     @property
+    def formula(self) -> Formula:
+        """
+        Get the combined formula of the adduct.
+        
+        Returns:
+            Formula: Combined formula of the adduct.
+        """
+        formula = Formula.base_formula()
+        for f, cnt in self._adduct_formulas.items():
+            formula = formula + (f * cnt)
+        return formula
+
+    @property
     def mass_shift(self) -> float:
         """
         Get the mass shift of the adduct.

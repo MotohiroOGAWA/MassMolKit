@@ -109,6 +109,22 @@ class Formula:
         result._reorder_elements(combined)
         return result
     
+    def __mul__(self, factor: int) -> "Formula":
+        """
+        Multiply formula by an integer factor.
+        Example: H2O * 2 -> H4O2
+        """
+        if not isinstance(factor, int):
+            raise TypeError(f"Formula can only be multiplied by int, not {type(factor)}")
+
+        new_elements = {elem: count * factor for elem, count in self._elements.items()}
+        new_charge = self._charge * factor
+        return Formula(new_elements, new_charge, self._raw_formula)
+
+    def __rmul__(self, factor: int) -> "Formula":
+        """Support reversed multiplication: 2 * Formula(...)"""
+        return self.__mul__(factor)
+    
     def __eq__(self, other: 'Formula') -> bool:
         if not isinstance(other, Formula):
             return False
@@ -200,3 +216,10 @@ class Formula:
             total_charge += atom.GetFormalCharge()
 
         return cls(elements=elements, charge=total_charge)
+    
+    @staticmethod
+    def base_formula() -> 'Formula':
+        """
+        Return a base formula with no elements and zero charge.
+        """
+        return Formula(elements={}, charge=0)
