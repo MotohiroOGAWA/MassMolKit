@@ -9,9 +9,9 @@ from ..Mol.Compound import Compound
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.warning')
 
-class AdductedIon:
-    def __init__(self, fragment_compound: Compound, adduct: Adduct):
-        self.compound = fragment_compound
+class AdductIon:
+    def __init__(self, compound: Compound, adduct: Adduct):
+        self.compound = compound
         self.adduct = adduct
 
         pass

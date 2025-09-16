@@ -133,7 +133,7 @@ class Adduct:
         return adduct
 
     @staticmethod
-    def from_str(adduct_str: str) -> "Adduct":
+    def parse(adduct_str: str) -> "Adduct":
         """
         Parse an adduct string like "[M+HCOOH-H]-" into Adduct(adducts_in=[HCOOH], adducts_out=[H]).
 

@@ -1,6 +1,6 @@
 import unittest
 from MassMolKit.Mol.Formula import Formula
-from MassMolKit.Mass.Adduct import Adduct
+from MassMolKit.MS.Adduct import Adduct
 
 
 class TestAdduct(unittest.TestCase):
@@ -34,7 +34,7 @@ class TestAdduct(unittest.TestCase):
 
     def test_from_str(self):
         # Test parsing from string
-        adduct = Adduct.from_str("[M+H2O-H]-")
+        adduct = Adduct.parse("[M+H2O-H]-")
         self.assertEqual(str(adduct), "[M+H2O-H]-")
         self.assertEqual(adduct.charge, -1)
         self.assertIn("O", adduct.element_diff)
@@ -48,15 +48,15 @@ class TestAdduct(unittest.TestCase):
 
     def test_eq_and_hash(self):
         # Test equality and hashing
-        a1 = Adduct.from_str("[M+H]+")
-        a2 = Adduct.from_str("[M+H]+")
+        a1 = Adduct.parse("[M+H]+")
+        a2 = Adduct.parse("[M+H]+")
         self.assertEqual(a1, a2)
         self.assertEqual(hash(a1), hash(a2))
-        self.assertNotEqual(a1, Adduct.from_str("[M-H]-"))
+        self.assertNotEqual(a1, Adduct.parse("[M-H]-"))
 
     def test_element_diff(self):
         # Test element difference calculation
-        adduct = Adduct.from_str("[M+Na-H]+")
+        adduct = Adduct.parse("[M+Na-H]+")
         diff = adduct.element_diff
         self.assertIn("Na", diff)
         self.assertIn("H", diff)

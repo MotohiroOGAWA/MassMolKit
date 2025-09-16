@@ -1,11 +1,11 @@
 import unittest
 from MassMolKit.Mol.Formula import Formula
 from MassMolKit.Mol.Compound import Compound
-from MassMolKit.Mass.Adduct import Adduct
-from MassMolKit.Mass.AdductedIon import AdductedIon
+from MassMolKit.MS.Adduct import Adduct
+from MassMolKit.MS.AdductIon import AdductIon
 
 
-class TestAdductedIon(unittest.TestCase):
+class TestAdductIon(unittest.TestCase):
     def setUp(self):
         # Ethanol as base compound
         self.ethanol = Compound.from_smiles("CCO")  # formula: C2H6O
@@ -15,7 +15,7 @@ class TestAdductedIon(unittest.TestCase):
     def test_formula_with_proton(self):
         # Ethanol + H+
         adduct = Adduct(mode="M", adducts_in=[self.h])
-        ion = AdductedIon(self.ethanol, adduct)
+        ion = AdductIon(self.ethanol, adduct)
         f = ion.formula
         self.assertIn("H", f.value)
         self.assertEqual(f.charge, 1,
@@ -24,14 +24,14 @@ class TestAdductedIon(unittest.TestCase):
     def test_charge_property(self):
         # Ethanol + Na+
         adduct = Adduct(mode="M", adducts_in=[self.na])
-        ion = AdductedIon(self.ethanol, adduct)
+        ion = AdductIon(self.ethanol, adduct)
         self.assertEqual(ion.charge, 1,
                          msg="Charge property mismatch for sodium adduct")
 
     def test_mz_calculation(self):
         # Ethanol + H+ (should give m/z ~ 47.049)
         adduct = Adduct(mode="M", adducts_in=[self.h])
-        ion = AdductedIon(self.ethanol, adduct)
+        ion = AdductIon(self.ethanol, adduct)
         mz_val = ion.mz
         expected_mass = ion.formula.exact_mass
         self.assertAlmostEqual(mz_val, expected_mass / ion.charge, places=6)
@@ -39,14 +39,14 @@ class TestAdductedIon(unittest.TestCase):
     def test_zero_charge_raises(self):
         # Artificially construct adduct with 0 charge
         adduct = Adduct(mode="M", adducts_in=[], adducts_out=[])
-        ion = AdductedIon(self.ethanol, adduct)
+        ion = AdductIon(self.ethanol, adduct)
         ion.adduct._charge = 0  # force 0 charge
         with self.assertRaises(ValueError):
             _ = ion.mz
 
     def test_repr(self):
         adduct = Adduct(mode="M", adducts_in=[self.h])
-        ion = AdductedIon(self.ethanol, adduct)
+        ion = AdductIon(self.ethanol, adduct)
         rep = repr(ion)
         self.assertIn("AdductedIon", rep)
         self.assertIn("CCO", rep)  # ethanol smiles
