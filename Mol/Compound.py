@@ -88,7 +88,7 @@ class Compound:
         Chem.MolToSmiles(_mol, canonical=True)
 
         # Retrieve canonical atom order
-        atom_order = list(map(int, _mol.GetProp("_smilesAtomOutputOrder")[1:-2].split(",")))
+        atom_order = list(map(int, _mol.GetProp("_smilesAtomOutputOrder").replace('[', '').replace(']', '').split(",")))
 
         # Build mapping: atom_map_num → new atom index
         atom_map_to_idx = {}
