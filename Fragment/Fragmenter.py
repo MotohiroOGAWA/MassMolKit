@@ -185,10 +185,10 @@ class Fragmenter:
                         add_edges(edge)
 
                 next_node_ids = list(new_node_ids)
-                print(f"Depth {depth} completed. New nodes: {len(new_node_ids)}")
-                print(f"Total nodes so far: {len(nodes)}")
-                print(f"Total edges so far: {len(edges)}")
-                print()
+                # print(f"Depth {depth} completed. New nodes: {len(new_node_ids)}")
+                # print(f"Total nodes so far: {len(nodes)}")
+                # print(f"Total edges so far: {len(edges)}")
+                # print()
         
         fragment_tree = FragmentTree(compound=compound, nodes=nodes, edges=edges)
         return fragment_tree
