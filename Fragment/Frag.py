@@ -33,6 +33,7 @@ class Frag:
         Reconstruct a fragmented molecule to satisfy valency and charge stability.
         """
         rw_mol = Chem.RWMol(self._raw._mol)
+        valid = True
 
         dummy_ids = [atom.GetAtomMapNum() for atom in rw_mol.GetAtoms() if atom.GetAtomicNum() == 0]
         all_symbols = [atom.GetSymbol() for atom in rw_mol.GetAtoms()]
@@ -63,6 +64,10 @@ class Frag:
             total_charge = sum(atom.GetFormalCharge() for atom in _rw_mol.GetAtoms())
 
             if self._adduct_type == AdductType.M_PLUS_H_POS:
+                if symbol in ["F", "Cl", "Br", "I"]:
+                    valid = False
+                    break  # Skip halogens for now
+
                 if (total_charge == 0) and (symbol == "C"):
                     next_m = self._replace_dummy_with_hydrogen(_rw_mol, dummy_id)
                     adduct = Adduct.parse("[F-H]+")
@@ -75,6 +80,10 @@ class Frag:
                     raise NotImplementedError(f"Reconstruction not implemented for atom type: {symbol}")
             else:
                 raise NotImplementedError(f"Reconstruction not implemented for adduct type: {self._adduct_type}")
+
+        if not valid:
+            self._candidates = {}
+            return
 
         # Not Fragmented or no valid reconstruction found
         if next_m is None:
