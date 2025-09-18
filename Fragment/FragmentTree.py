@@ -84,6 +84,25 @@ class FragmentTree:
             formulas = list(formulas)
             formulas.sort(key=lambda x: x.exact_mass)
             return tuple(formulas)
+        
+    def get_all_adduct_ions(self) -> List[AdductIon]:
+        """
+        Get all AdductIons from the fragment tree.
+        """
+        formulas = defaultdict(list)
+
+        for node in self.nodes:
+            for adduct in node.adducts:
+                adduct_ion = AdductIon(
+                    compound=Compound.from_smiles(node.smiles),
+                    adduct=Adduct.parse(adduct),
+                )
+                formulas[adduct_ion.formula].append(adduct_ion)
+        # Convert defaultdict to a regular dict for consistent output
+        formulas = [(k, v) for k, v in formulas.items()]
+        formulas.sort(key=lambda x: x[0].exact_mass)
+        formulas = {k: v for k, v in formulas}
+        return formulas
     
     def save(self, path: str):
         """

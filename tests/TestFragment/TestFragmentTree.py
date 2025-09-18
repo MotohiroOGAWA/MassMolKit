@@ -27,6 +27,7 @@ class TestFragmentTree(unittest.TestCase):
             )
         fragment_tree = fragmenter.create_fragment_tree(self.deamino_nTrp_DL_Ala_OH)
         all_formulas = fragment_tree.get_all_formulas(sources=True)
+        all_adduct_ions = fragment_tree.get_all_adduct_ions()
         # fragment_tree.save_topological_tsv("./node.tsv", "./edge.tsv")
         pass
 

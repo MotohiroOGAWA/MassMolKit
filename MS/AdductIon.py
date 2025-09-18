@@ -10,6 +10,7 @@ from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.warning')
 
 class AdductIon:
+    DELIM = "|"
     def __init__(self, compound: Compound, adduct: Adduct):
         self.compound = compound
         self.adduct = adduct
@@ -17,7 +18,35 @@ class AdductIon:
         pass
 
     def __repr__(self):
-        return f"AdductedIon({self.compound.smiles} {self.adduct})"
+        return f"AdductIon({self.compound.smiles}{self.adduct})"
+    
+    def __str__(self) -> str:
+        """
+        Return string representation with delimiter.
+        Example: "C6H12O6|[M+H]+"
+        """
+        return f"{self.compound.smiles}{self.DELIM}{self.adduct}"
+    
+
+    @classmethod
+    def parse(cls, text: str) -> "AdductIon":
+        """
+        Parse string created by __str__ into an AdductIon.
+        Example input: "C6H12O6|[M+H]+"
+        """
+        from ..Mol.Compound import Compound
+        from .Adduct import Adduct
+
+        if cls.DELIM not in text:
+            raise ValueError(f"Missing delimiter '{cls.DELIM}' in: {text}")
+
+        smiles, adduct_str = text.split(cls.DELIM, 1)
+
+        # construct Compound and Adduct
+        compound = Compound.from_smiles(smiles)  # factory: handles SMILES or Formula
+        adduct = Adduct.parse(adduct_str)
+
+        return cls(compound, adduct)
     
     @property
     def formula(self) -> Formula:

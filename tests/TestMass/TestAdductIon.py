@@ -48,9 +48,41 @@ class TestAdductIon(unittest.TestCase):
         adduct = Adduct(mode="M", adducts_in=[self.h])
         ion = AdductIon(self.ethanol, adduct)
         rep = repr(ion)
-        self.assertIn("AdductedIon", rep)
+        self.assertIn("AdductIon", rep)
         self.assertIn("CCO", rep)  # ethanol smiles
         self.assertIn("[M+H]+", rep)  # adduct string
+
+    def test_str_and_parse_with_proton(self):
+        # Ethanol + H+
+        adduct = Adduct(mode="M", adducts_in=[self.h])
+        ion = AdductIon(self.ethanol, adduct)
+
+        # Convert to string
+        s = str(ion)
+        self.assertIn("[M+H]+", s)
+        self.assertIn("CCO", s)
+
+        # Parse back
+        parsed = AdductIon.parse(s)
+        self.assertEqual(parsed.compound.formula, ion.compound.formula)
+        self.assertEqual(parsed.adduct.charge, ion.adduct.charge)
+
+    def test_str_and_parse_with_sodium(self):
+        # Ethanol + Na+
+        adduct = Adduct(mode="M", adducts_in=[self.na])
+        ion = AdductIon(self.ethanol, adduct)
+
+        s = str(ion)
+        self.assertIn("[M+Na]+", s)
+
+        parsed = AdductIon.parse(s)
+        self.assertEqual(parsed.charge, ion.charge)
+        self.assertAlmostEqual(parsed.mz, ion.mz, places=6)
+
+    def test_parse_invalid_string(self):
+        # Missing delimiter
+        with self.assertRaises(ValueError):
+            AdductIon.parse("C2H6O[M+H]+".replace(AdductIon.DELIM, ""))
 
 
 if __name__ == "__main__":
