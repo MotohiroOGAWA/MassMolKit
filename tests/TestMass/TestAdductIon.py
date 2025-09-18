@@ -9,8 +9,8 @@ class TestAdductIon(unittest.TestCase):
     def setUp(self):
         # Ethanol as base compound
         self.ethanol = Compound.from_smiles("CCO")  # formula: C2H6O
-        self.h = Formula.from_str("H+")             # proton
-        self.na = Formula.from_str("Na+")           # sodium ion
+        self.h = Formula.parse("H+")             # proton
+        self.na = Formula.parse("Na+")           # sodium ion
 
     def test_formula_with_proton(self):
         # Ethanol + H+

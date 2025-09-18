@@ -158,7 +158,7 @@ class Adduct:
 
         for sign, num, formula_str in pattern.findall(remainder):
             count = int(num) if num else 1
-            formulas = [Formula.from_str(formula_str) for _ in range(count)]
+            formulas = [Formula.parse(formula_str) for _ in range(count)]
 
             if sign == "+":
                 adducts_in.extend(formulas)

@@ -190,7 +190,7 @@ class Formula:
         return Formula(self._elements, self._charge, self._raw_formula)
     
     @classmethod
-    def from_str(self, formula_str: str) -> 'Formula':
+    def parse(self, formula_str: str) -> 'Formula':
         """
         Create a Formula object from a formula string.
         """

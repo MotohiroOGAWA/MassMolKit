@@ -93,7 +93,7 @@ class TestFormula(unittest.TestCase):
 
     def test_from_str(self):
         for name, entry in self.formulas.items():
-            f_parsed = Formula.from_str(entry['test_str'])
+            f_parsed = Formula.parse(entry['test_str'])
             self.assertEqual(f_parsed, entry['formula'],
                              msg=f"Mismatch in from_str for {name}")
             

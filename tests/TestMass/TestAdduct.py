@@ -6,9 +6,9 @@ from MassMolKit.MS.Adduct import Adduct
 class TestAdduct(unittest.TestCase):
     def setUp(self):
         # Prepare basic formulas for testing
-        self.h = Formula.from_str("H+")  # proton
-        self.na = Formula.from_str("Na+")     # sodium ion
-        self.h2o = Formula.from_str("H2O")   # neutral molecule
+        self.h = Formula.parse("H+")  # proton
+        self.na = Formula.parse("Na+")     # sodium ion
+        self.h2o = Formula.parse("H2O")   # neutral molecule
 
     def test_simple_positive_adduct(self):
         # Test [M+H]+
