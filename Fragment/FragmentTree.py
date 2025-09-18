@@ -85,7 +85,7 @@ class FragmentTree:
             formulas.sort(key=lambda x: x.exact_mass)
             return tuple(formulas)
         
-    def get_all_adduct_ions(self) -> List[AdductIon]:
+    def get_all_adduct_ions(self) -> Dict[Formula, List[AdductIon]]:
         """
         Get all AdductIons from the fragment tree.
         """
