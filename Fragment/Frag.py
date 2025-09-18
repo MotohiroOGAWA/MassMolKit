@@ -72,7 +72,7 @@ class Frag:
                     next_m = self._replace_dummy_with_hydrogen(_rw_mol, dummy_id)
                     adduct = Adduct.parse("[F-H]+")
 
-                elif any(sym in ["C", "O", "N"] for sym in all_symbols):
+                elif any(sym in ["C", "O", "N", "S", "P"] for sym in all_symbols):
                     next_m = self._replace_dummy_with_hydrogen(_rw_mol, dummy_id)
                     if adduct is None:
                         adduct = Adduct.parse("[F+H]+")
