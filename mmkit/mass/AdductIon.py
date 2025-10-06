@@ -1,8 +1,8 @@
 from rdkit import Chem
 from typing import Union
 from .Adduct import Adduct
-from ..Mol.Formula import Formula
-from ..Mol.Compound import Compound
+from ..chem.Formula import Formula
+from ..chem.Compound import Compound
 
 
 # Suppress warnings and informational messages
@@ -34,7 +34,7 @@ class AdductIon:
         Parse string created by __str__ into an AdductIon.
         Example input: "C6H12O6|[M+H]+"
         """
-        from ..Mol.Compound import Compound
+        from ..chem.Compound import Compound
         from .Adduct import Adduct
 
         if cls.DELIM not in text:

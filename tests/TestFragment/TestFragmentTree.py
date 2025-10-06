@@ -1,11 +1,11 @@
 import unittest
 from rdkit import Chem
-from MassMolKit.Fragment.CleavagePattern import CleavagePattern
-from MassMolKit.Fragment.cleavage_patterns import patterns as default_cleavage_patterns
-from MassMolKit.Mol.Compound import Compound
-from MassMolKit.Mol.Formula import Formula
-from MassMolKit.Fragment.Fragmenter import Fragmenter
-from MassMolKit.MS.constants import AdductType
+from mmkit.fragment.CleavagePattern import CleavagePattern
+from mmkit.fragment.cleavage_patterns import patterns as default_cleavage_patterns
+from mmkit.chem.Compound import Compound
+from mmkit.chem.Formula import Formula
+from mmkit.fragment.Fragmenter import Fragmenter
+from mmkit.mass.constants import AdductType
 
 
 class TestFragmentTree(unittest.TestCase):

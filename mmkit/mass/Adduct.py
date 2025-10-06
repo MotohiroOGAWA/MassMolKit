@@ -2,8 +2,8 @@ from typing import Dict, List, OrderedDict, Literal
 import re
 from rdkit import Chem
 from collections import defaultdict
-from ..Mol.Formula import Formula
-from ..Mol.utilities import charge_from_str
+from ..chem.Formula import Formula
+from ..chem.utilities import charge_from_str
 
 class Adduct:
     """

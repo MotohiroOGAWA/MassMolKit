@@ -18,40 +18,27 @@ It can be integrated as a Git submodule or installed in editable mode.
 
 To integrate MassMolKit into an existing project, run the following commands at the root of your project:
 
-    # At the root directory of your project
-    git submodule add https://github.com/MotohiroOGAWA/MassMolKit.git cores/MassMolKit
-    git commit -m "Add MassMolKit as submodule"
+```bash
+# At the root directory of your project
+git submodule add https://github.com/MotohiroOGAWA/MassMolKit.git ./MassMolKit
+git commit -m "Add MassMolKit as submodule"
+```
 
-## 🔄 Updating Submodules
-
-    cd cores/MassMolKit
-    git checkout main
-    git pull origin main
-    cd ../..
-    git add cores/MassMolKit
-    git commit -m "Update MassMolKit submodule"
-
-## ⚙️ Installation (Editable Mode)
-
-To install MassMolKit into your Python environment for development, run:
-
-    cd cores/MassMolKit
-    pip install -e .
-
-The -e option (editable mode) ensures that any modifications to the source code are immediately reflected in your environment.
-
----
+## ⚙️ Install from GitHub (Recommended for Users)
+You can install **MassMolKit** directly from the GitHub repository:
+```bash
+pip install git+https://github.com/MotohiroOGAWA/MassMolKit.git
+```
 
 ## 🧪 Running Tests
-
 You can run tests to verify that MassMolKit is working properly.
 
 ### Using Python
-
-    python -m MassMolKit.run_tests
+```bash
+python -m run_tests
+```
 
 ### Using the shell script
-
-    ./MassMolKit/run_tests.sh
-
-
+```bash
+./run_tests.sh
+```

@@ -1,6 +1,6 @@
 import unittest
-from MassMolKit.Mol.Formula import Formula
-from MassMolKit.MS.Adduct import Adduct
+from mmkit.chem.Formula import Formula
+from mmkit.mass.Adduct import Adduct
 
 
 class TestAdduct(unittest.TestCase):

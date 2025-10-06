@@ -1,8 +1,8 @@
 import unittest
-from MassMolKit.Mol.Formula import Formula
-from MassMolKit.Mol.Compound import Compound
-from MassMolKit.MS.Adduct import Adduct
-from MassMolKit.MS.AdductIon import AdductIon
+from mmkit.chem.Formula import Formula
+from mmkit.chem.Compound import Compound
+from mmkit.mass.Adduct import Adduct
+from mmkit.mass.AdductIon import AdductIon
 
 
 class TestAdductIon(unittest.TestCase):

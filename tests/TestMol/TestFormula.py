@@ -1,7 +1,7 @@
 import unittest
 from collections import OrderedDict
 from rdkit import Chem
-from MassMolKit.Mol.Formula import Formula
+from mmkit.chem.Formula import Formula
 
 
 class TestFormula(unittest.TestCase):

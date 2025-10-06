@@ -6,10 +6,10 @@ from rdkit.Chem import ResonanceMolSupplier, ResonanceFlags
 from collections import Counter, deque, defaultdict
 from bidict import bidict
 
-from ..Mol.Compound import Compound
-from ..MS.constants import AdductType
-from ..MS.Adduct import Adduct
-from ..MS.AdductIon import AdductIon
+from ..chem.Compound import Compound
+from ..mass.constants import AdductType
+from ..mass.Adduct import Adduct
+from ..mass.AdductIon import AdductIon
 
 # Suppress warnings and informational messages
 from rdkit import RDLogger

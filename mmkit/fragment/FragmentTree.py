@@ -6,10 +6,10 @@ import copy
 from enum import Enum
 import networkx as nx
 
-from ..Mol.Compound import Compound
-from ..MS.Adduct import Adduct
-from ..MS.AdductIon import AdductIon
-from ..Mol.Formula import Formula
+from ..chem.Compound import Compound
+from ..mass.Adduct import Adduct
+from ..mass.AdductIon import AdductIon
+from ..chem.Formula import Formula
 from .BondPosition import BondPosition
 
 

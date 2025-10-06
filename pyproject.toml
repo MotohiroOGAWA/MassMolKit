@@ -3,11 +3,11 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "MassMolKit"
+name = "mmkit"
 version = "0.1.0"
 description = ""
 authors = [
-    { name = "Motohiro Ogawa", email = "makakonto0503@outlook.jp" }
+    { name = "Motohiro Ogawa" }
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -16,5 +16,11 @@ dependencies = [
     "rdkit"
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
+[tool.mypy]
+files = ["mmkit"]
+show_error_codes = true
+strict = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

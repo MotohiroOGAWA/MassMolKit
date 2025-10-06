@@ -7,12 +7,12 @@ from rdkit import Chem
 from .CleavagePattern import CleavagePattern
 from .cleavage_patterns import patterns as default_cleavage_patterns
 from .FragmentTree import FragmentTree, FragmentNode, FragmentEdge
-from ..MS.constants import AdductType
-from ..Mol.Compound import Compound
-from ..MS.Adduct import Adduct
-from ..MS.AdductIon import AdductIon
-from ..Fragment.Frag import Frag
-from ..Fragment.BondPosition import BondPosition
+from ..mass.constants import AdductType
+from ..chem.Compound import Compound
+from ..mass.Adduct import Adduct
+from ..mass.AdductIon import AdductIon
+from ..fragment.Frag import Frag
+from ..fragment.BondPosition import BondPosition
 
 class Fragmenter:
     _SUPPORTED_ADDUCT_TYPES = [AdductType.M_PLUS_H_POS]

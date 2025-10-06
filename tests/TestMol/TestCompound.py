@@ -1,7 +1,7 @@
 import unittest
 from rdkit import Chem
-from MassMolKit.Mol.Compound import Compound
-from MassMolKit.Mol.Formula import Formula
+from mmkit.chem.Compound import Compound
+from mmkit.chem.Formula import Formula
 
 
 class TestCompound(unittest.TestCase):
