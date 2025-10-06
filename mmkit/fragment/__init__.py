@@ -1,7 +1,7 @@
-from Fragmenter import Fragmenter
-from FragmentTree import FragmentTree, FragmentNode, FragmentEdge
-from CleavagePattern import CleavagePattern
-from Frag import Frag
+from .Fragmenter import Fragmenter
+from .FragmentTree import FragmentTree, FragmentNode, FragmentEdge
+from .CleavagePattern import CleavagePattern
+from .Frag import Frag
 
 __all__ = [
     "Fragmenter",

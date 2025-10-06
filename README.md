@@ -1,5 +1,3 @@
-English | [日本語](README.ja.md)
-
 # MassMolKit
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-red.svg)](LICENSE)
