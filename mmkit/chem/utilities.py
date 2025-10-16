@@ -35,5 +35,9 @@ def charge_from_str(charge_str: str) -> int:
         return int(charge_str[1:])
     elif charge_str.startswith("-"):
         return int(charge_str)
+    elif charge_str.endswith("+"):
+        return int(charge_str[:-1])
+    elif charge_str.endswith("-"):
+        return -int(charge_str[:-1])
     else:
         raise ValueError(f"Invalid charge string: {charge_str}")

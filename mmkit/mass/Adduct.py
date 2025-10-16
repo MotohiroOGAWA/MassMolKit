@@ -11,20 +11,22 @@ class Adduct:
     """
     def __init__(
             self, 
-            mode: Literal["M", "F"], 
+            ion_type: Literal["M", "F"], 
+            n_molecules: int = 1,
             adducts_in: List[Formula] = [], 
             adducts_out: List[Formula] = [], 
-            charge_diff: int = 0
+            charge_offset: int = 0
             ):
         """
         Initialize an adduct with element differences and charge difference.
         
         Args:
-            mode (str): Mode of the adduct, either "M" or "F". 
+            ion_type (str): ion_type of the adduct, either "M" or "F". 
             element_diff (Dict[str, int]): Dictionary of element differences.
-            charge_diff (int): Charge difference.
+            charge_offset (int): Additional charge offset to apply.
         """
-        self.mode = mode
+        self._ion_type = ion_type
+        self._n_molecules = n_molecules
         formula_count_in: dict[Formula, int] = defaultdict(int)
         charge = 0
         for f in adducts_in:
@@ -35,10 +37,10 @@ class Adduct:
             charge -= f.charge
 
         self._adduct_formulas: dict[Formula, int] = {f.copy(): cnt for f, cnt in formula_count_in.items()}
-        self._charge = charge + charge_diff
+        self._charge = charge + charge_offset
 
     @property
-    def formula(self) -> Formula:
+    def formula_shift(self) -> Formula:
         """
         Get the combined formula of the adduct.
         
@@ -90,9 +92,9 @@ class Adduct:
         parts = []
         for f, cnt in sorted(self._adduct_formulas.items(), key=lambda x: (-x[0].exact_mass, x[0].raw_formula)):
             if cnt > 0:
-                parts.append(f"+{cnt if cnt > 1 else ''}{f.raw_formula}")
+                parts.append(f"+{cnt if cnt > 1 else ''}{f.raw_formula.replace('+', '').replace('-', '')}")
             elif cnt < 0:
-                parts.append(f"-{abs(cnt) if cnt < -1 else ''}{f.raw_formula}")
+                parts.append(f"-{abs(cnt) if cnt < -1 else ''}{f.raw_formula.replace('+', '').replace('-', '')}")
         body = "".join(parts)
 
         if self._charge > 0:
@@ -102,7 +104,9 @@ class Adduct:
         else:
             charge = ""
             
-        return f"[{self.mode}{body}]{charge}"
+        nM = f"{self._n_molecules if self._n_molecules > 1 else ''}{self._ion_type}"
+
+        return f"[{nM}{body}]{charge}"
     
     def __eq__(self, value):
         return self.__str__() == str(value)
@@ -124,10 +128,11 @@ class Adduct:
             Adduct: A new Adduct instance with the same properties.
         """
         adduct = Adduct(
-            mode=self.mode,
+            ion_type=self._ion_type,
+            n_molecules=self._n_molecules,
             adducts_in=[f.copy() for f in self._adduct_formulas.keys() if self._adduct_formulas[f] > 0],
             adducts_out=[f.copy() for f in self._adduct_formulas.keys() if self._adduct_formulas[f] < 0],
-            charge_diff=0
+            charge_offset=0
         )
         adduct._charge = self._charge
         return adduct
@@ -135,37 +140,53 @@ class Adduct:
     @staticmethod
     def parse(adduct_str: str) -> "Adduct":
         """
-        Parse an adduct string like "[M+HCOOH-H]-" into Adduct(adducts_in=[HCOOH], adducts_out=[H]).
+        Parse an adduct string like "[M+HCOOH-H]-" or "[2F-H]-" into an Adduct object.
 
         Args:
-            adduct_str (str): The adduct string.
+            adduct_str (str): The adduct string (e.g., "[M+H]+", "[2M-H]-", "[3F+Na]+").
 
         Returns:
             Adduct: Parsed Adduct object.
         """
         assert adduct_str.startswith("[") and "]" in adduct_str, f"Invalid adduct format: {adduct_str}"
 
-        # Extract inner content and charge symbol
+        # --- Extract core parts ---
         main, charge_part = adduct_str[1:].split("]")
-        mode = main[0]
-        remainder = main[1:]
-        charge = charge_from_str(charge_part)
+        charge = charge_from_str(charge_part.strip())
 
-        # Regex to capture: +H, -H, +2Na, -2HCOOH etc.
-        pattern = re.compile(r'([+-])(\d*)([A-Z][a-zA-Z0-9]*)')
-        adducts_in = []
-        adducts_out = []
+        # --- Detect n + type (e.g. 2M, 3F, NP, etc.) ---
+        n_match = re.match(r"(\d*)([A-Za-z]+)", main)
+        if not n_match:
+            raise ValueError(f"Invalid adduct format: missing molecule identifier in {adduct_str}")
 
-        for sign, num, formula_str in pattern.findall(remainder):
+        n_molecules = int(n_match.group(1)) if n_match.group(1) else 1
+        ion_type = n_match.group(2)
+        remainder = main[n_match.end():] 
+
+        # --- Parse adduct formulas ---
+        pattern = re.compile(r'([+-])(\d*)([A-Z][A-Za-z0-9]*)|([+-])(\d*)(i)')
+        adducts_in, adducts_out = [], []
+
+        for sign, num, formula_str, i_sign, i_num, i_formula_str in pattern.findall(remainder):
+            if i_formula_str == 'i':  # neutron case
+                formula_str = f"+{Formula.neutron().symbol}"
+                sign = i_sign
+                num = i_num
             count = int(num) if num else 1
             formulas = [Formula.parse(formula_str) for _ in range(count)]
-
             if sign == "+":
                 adducts_in.extend(formulas)
             else:
                 adducts_out.extend(formulas)
 
-        adduct = Adduct(mode=mode, adducts_in=adducts_in, adducts_out=adducts_out)
+        # --- Construct Adduct object ---
+        adduct = Adduct(
+            ion_type=ion_type,
+            n_molecules=n_molecules,
+            adducts_in=adducts_in,
+            adducts_out=adducts_out,
+            charge_offset=0
+        )
         adduct._charge = charge
 
         return adduct
@@ -185,3 +206,47 @@ class Adduct:
                 total[elem] += elem_count * count
 
         return dict(total)
+    
+    def calc_formula(self, neutral_formula: Formula) -> Formula:
+        """
+        Calculate the resulting formula after adduct formation.
+
+        Args:
+            neutral_formula (Formula): Monoisotopic neutral formula of the molecule.
+
+        Returns:
+            Formula: Resulting formula after adduct addition.
+        """
+        total_formula = neutral_formula * self._n_molecules + self.formula_shift
+        return total_formula
+    
+    def calc_mass(self, neutral_mass: float) -> float:
+        """
+        Calculate the total mass after adduct formation (without dividing by charge).
+
+        Args:
+            neutral_mass (float): Monoisotopic neutral mass of the molecule.
+
+        Returns:
+            float: Total combined mass after adduct addition.
+        """
+        total_mass = neutral_mass * self._n_molecules + self.mass_shift
+        return total_mass
+
+    def calc_mz(self, neutral_mass: float) -> float:
+        """
+        Calculate the observed m/z after adduct formation.
+
+        Args:
+            neutral_mass (float): Monoisotopic neutral mass of the molecule.
+
+        Returns:
+            float: Observed m/z value.
+        """
+        total_mass = self.calc_mass(neutral_mass)
+
+        if self.charge == 0:
+            raise ValueError(f"Cannot calculate m/z for uncharged adduct: {self}")
+
+        mz = total_mass / abs(self.charge)
+        return mz

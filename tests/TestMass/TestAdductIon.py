@@ -14,7 +14,7 @@ class TestAdductIon(unittest.TestCase):
 
     def test_formula_with_proton(self):
         # Ethanol + H+
-        adduct = Adduct(mode="M", adducts_in=[self.h])
+        adduct = Adduct(ion_type="M", adducts_in=[self.h])
         ion = AdductIon(self.ethanol, adduct)
         f = ion.formula
         self.assertIn("H", f.value)
@@ -23,14 +23,14 @@ class TestAdductIon(unittest.TestCase):
 
     def test_charge_property(self):
         # Ethanol + Na+
-        adduct = Adduct(mode="M", adducts_in=[self.na])
+        adduct = Adduct(ion_type="M", adducts_in=[self.na])
         ion = AdductIon(self.ethanol, adduct)
         self.assertEqual(ion.charge, 1,
                          msg="Charge property mismatch for sodium adduct")
 
     def test_mz_calculation(self):
         # Ethanol + H+ (should give m/z ~ 47.049)
-        adduct = Adduct(mode="M", adducts_in=[self.h])
+        adduct = Adduct(ion_type="M", adducts_in=[self.h])
         ion = AdductIon(self.ethanol, adduct)
         mz_val = ion.mz
         expected_mass = ion.formula.exact_mass
@@ -38,14 +38,14 @@ class TestAdductIon(unittest.TestCase):
 
     def test_zero_charge_raises(self):
         # Artificially construct adduct with 0 charge
-        adduct = Adduct(mode="M", adducts_in=[], adducts_out=[])
+        adduct = Adduct(ion_type="M", adducts_in=[], adducts_out=[])
         ion = AdductIon(self.ethanol, adduct)
         ion.adduct._charge = 0  # force 0 charge
         with self.assertRaises(ValueError):
             _ = ion.mz
 
     def test_repr(self):
-        adduct = Adduct(mode="M", adducts_in=[self.h])
+        adduct = Adduct(ion_type="M", adducts_in=[self.h])
         ion = AdductIon(self.ethanol, adduct)
         rep = repr(ion)
         self.assertIn("AdductIon", rep)
@@ -54,7 +54,7 @@ class TestAdductIon(unittest.TestCase):
 
     def test_str_and_parse_with_proton(self):
         # Ethanol + H+
-        adduct = Adduct(mode="M", adducts_in=[self.h])
+        adduct = Adduct(ion_type="M", adducts_in=[self.h])
         ion = AdductIon(self.ethanol, adduct)
 
         # Convert to string
@@ -69,7 +69,7 @@ class TestAdductIon(unittest.TestCase):
 
     def test_str_and_parse_with_sodium(self):
         # Ethanol + Na+
-        adduct = Adduct(mode="M", adducts_in=[self.na])
+        adduct = Adduct(ion_type="M", adducts_in=[self.na])
         ion = AdductIon(self.ethanol, adduct)
 
         s = str(ion)

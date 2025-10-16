@@ -4,6 +4,14 @@ from typing import Dict
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 
+class Neutron:
+    """Virtual representation of a neutron particle."""
+    symbol = "n"
+    mass = 1.008665  # Atomic mass in daltons (Da)
+    charge = 0       # Neutral charge
+    atomic_num = 0   # Not an element in the periodic table
+neutron = Neutron()
+
 class Formula:
     def __init__(self, elements: Dict[str, int], charge: int, raw_formula: str = ""):
         # OrderedDict to preserve Hill order: C, H, then alphabetical
@@ -41,8 +49,11 @@ class Formula:
         """
         mass = 0.0
         for elem, count in self._elements.items():
-            atomic_number = Chem.GetPeriodicTable().GetAtomicNumber(elem)
-            mass += Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atomic_number) * count
+            if elem == neutron.symbol:  # neutron
+                mass += neutron.mass * count
+            else:
+                atomic_number = Chem.GetPeriodicTable().GetAtomicNumber(elem)
+                mass += Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atomic_number) * count
         return mass
 
     def __repr__(self):
@@ -71,9 +82,13 @@ class Formula:
         self._raw_formula = formula  # Store the raw formula for reference
 
         # Parse element counts
-        matches = re.findall(r"([+-]?)([A-Z][a-z]?)(\d*)", formula)
+        matches = re.findall(rf"([+-]?)([A-Z][a-z]?)(\d*)|([+-])({neutron.symbol})(\d*)", formula)
         temp = {}
-        for sign, elem, count in matches:
+        for sign, elem, count, i_sign, i_elem, i_count in matches:
+            if i_elem == neutron.symbol:  # neutron
+                elem = neutron.symbol
+                sign = i_sign
+                count = i_count
             count = int(count) if count else 1
             if sign == "-":
                 count = -count
@@ -158,7 +173,11 @@ class Formula:
         Reorder elements according to Hill system.
         """
         mol = Chem.RWMol()
+        exist_neutron = False
         for elem in elements:
+            if elem == neutron.symbol:  # neutron
+                exist_neutron = True
+                continue
             atom = Chem.Atom(elem)
             atom.SetNoImplicit(True)
             mol.AddAtom(atom)
@@ -168,16 +187,26 @@ class Formula:
         matches = re.findall(r"([A-Z][a-z]?)(\d*)", formula_str)
 
         ordered = tuple(m[0] for m in matches)
+        if exist_neutron:
+            ordered += (neutron.symbol,)
         return ordered
 
     def to_string(self, no_charge: bool = False) -> str:
         parts = []
+        neutron_formula = ''
         for elem, count in self._elements.items():
-            if count > 0:
-                parts.append(f"{elem}{count if count != 1 else ''}")
-            elif count < 0:
-                parts.append(f"-{elem}{-count if count != -1 else ''}")
+            if elem == neutron.symbol:  # neutron
+                if count > 0:
+                    neutron_formula = f"+{elem}{count if count != 1 else ''}"
+                elif count < 0:
+                    neutron_formula = f"-{elem}{-count if count != -1 else ''}"
+            else:
+                if count > 0:
+                    parts.append(f"{elem}{count if count != 1 else ''}")
+                elif count < 0:
+                    parts.append(f"-{elem}{-count if count != -1 else ''}")
         formula = "".join(parts)
+        formula += neutron_formula
         
         if not no_charge:
             if self._charge > 0:
@@ -223,3 +252,10 @@ class Formula:
         Return a base formula with no elements and zero charge.
         """
         return Formula(elements={}, charge=0)
+    
+    @staticmethod
+    def neutron() -> 'Neutron':
+        """
+        Return a virtual Neutron object.
+        """
+        return Neutron()

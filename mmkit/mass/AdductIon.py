@@ -54,7 +54,7 @@ class AdductIon:
         Get the molecular formula of the fragment with the adduct applied.
         """
         formula = self.compound.formula.copy()
-        formula = formula + self.adduct.formula
+        formula = formula + self.adduct.formula_shift
         formula._charge = self.adduct.charge
         return formula
 
