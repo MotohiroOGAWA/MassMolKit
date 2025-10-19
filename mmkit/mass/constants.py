@@ -14,7 +14,10 @@ class IonMode(Enum):
 class AdductType(Enum):
     NONE = "None"
     M_PLUS_H_POS = "[M+H]+"
+    M_PLUS_NH4_POS = "[M+NH4]+"
+    M_PLUS_Na_POS = "[M+Na]+"
     M_MINUS_H_NEG = "[M-H]-"
+
 
 
 PPM = 1/1000000

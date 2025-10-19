@@ -74,4 +74,25 @@ def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0) -> Dict
     res = sorted(res, key=lambda f: (f.exact_mass, f.plain))
 
     return res
-    
+
+def assign_formula_for_mz(
+    mz_list: float,
+    candidate_formulas: List[Formula],
+    mass_tolerance: float,
+) -> List[Formula]:
+    """
+    Assign possible formulas to a given m/z value within a specified mass tolerance.
+    Args:
+        mz_list (float): The m/z value to match.
+        candidate_formulas (List[Formula]): List of candidate formulas.
+        mass_tolerance (float): Mass tolerance in Daltons.
+    Returns:
+        List[Formula]: List of matched formulas within the mass tolerance.
+    """
+    matched_formulas = []
+    for formula in candidate_formulas:
+        mass = formula.exact_mass
+        if abs(mz_list - mass) <= mass_tolerance:
+            matched_formulas.append(formula)
+    return matched_formulas
+

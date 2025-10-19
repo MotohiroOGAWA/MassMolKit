@@ -25,6 +25,9 @@ class Adduct:
             element_diff (Dict[str, int]): Dictionary of element differences.
             charge_offset (int): Additional charge offset to apply.
         """
+        assert ion_type in ["M", "F"], "ion_type must be one of 'M', 'F'"
+        assert n_molecules >= 1, "n_molecules must be at least 1"
+
         self._ion_type = ion_type
         self._n_molecules = n_molecules
         formula_count_in: dict[Formula, int] = defaultdict(int)
