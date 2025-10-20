@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 
 class MassTolerance(ABC):
     """Base class for mass tolerance calculation (Da or ppm)."""
+    def __init__(self, tolerance: float):
+        self.tolerance = tolerance
 
     @abstractmethod
     def error(self, observed: float, theoretical: float) -> float:
@@ -18,7 +20,7 @@ class DaTolerance(MassTolerance):
     """Absolute tolerance in Daltons."""
 
     def __init__(self, tolerance: float):
-        self.tolerance = tolerance  # e.g., 0.002 Da
+        super().__init__(tolerance)
 
     def error(self, observed: float, theoretical: float) -> float:
         return observed - theoretical
@@ -31,7 +33,7 @@ class PpmTolerance(MassTolerance):
     """Relative tolerance in parts-per-million (ppm)."""
 
     def __init__(self, tolerance: float):
-        self.tolerance = tolerance  # e.g., 10 ppm
+        super().__init__(tolerance)
 
     def error(self, observed: float, theoretical: float) -> float:
         return (observed - theoretical) / theoretical * 1e6
