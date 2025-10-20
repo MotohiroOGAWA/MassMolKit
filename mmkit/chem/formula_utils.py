@@ -154,6 +154,8 @@ def assign_formulas_to_peaks(
                 matches.append((name, mass_tolerance.error(mz, exact_mass)))
             j += 1
 
+        # Sort by smallest absolute mass error
+        matches.sort(key=lambda x: abs(x[1]))
         # Store result
         results[orig_idx] = {
             "mz": mz,
