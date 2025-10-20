@@ -14,21 +14,21 @@ class MassTolerance(ABC):
     def within(self, observed: float, theoretical: float) -> bool:
         """Check if observed value is within tolerance from theoretical."""
         pass
-    
+
     # --- Operator overloads ---
-    def __add__(self, value: float):
+    def __add__(self, value: float) -> "MassTolerance":
         """Return new instance with increased tolerance."""
         return self.__class__(self.tolerance + value)
 
-    def __sub__(self, value: float):
+    def __sub__(self, value: float) -> "MassTolerance":
         """Return new instance with decreased tolerance."""
         return self.__class__(self.tolerance - value)
 
-    def __mul__(self, value: float):
+    def __mul__(self, value: float) -> "MassTolerance":
         """Return new instance with multiplied tolerance."""
         return self.__class__(self.tolerance * value)
 
-    def __truediv__(self, value: float):
+    def __truediv__(self, value: float) -> "MassTolerance":
         """Return new instance with divided tolerance."""
         return self.__class__(self.tolerance / value)
 
