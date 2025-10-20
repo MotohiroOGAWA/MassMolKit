@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple, Any
 from itertools import product
 from typing import Generator
 from.Formula import Formula
+from ..mass import MassTolerance
 
 
 def calculate_dbe(elements: dict[str, int]) -> float:
@@ -77,24 +78,61 @@ def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0) -> Dict
     
 def assign_formulas_to_peaks(
     peaks_mz: List[float],
-    formulas: List["Formula"],
-    mass_tolerance: float = 0.01
+    formula_candidates: List["Formula"],
+    mass_tolerance: MassTolerance,
 ) -> List[Dict[str, Any]]:
     """
     Efficiently assign candidate formulas to peaks using a two-pointer approach.
 
     Args:
-        peaks_mz (List[float]): Experimental peak m/z list (unsorted).
-        formulas (List[Formula]): Formula objects (must have 'plain' and 'exact_mass').
-        mass_tolerance (float): Allowed deviation in Da.
+        peaks_mz (List[float]):
+            List of experimental peak m/z values (unsorted).
+
+        formula_candidates (List[Formula]):
+            List of candidate molecular formulas, each with an `exact_mass` attribute.
+
+        mass_tolerance (MassTolerance):
+            Mass tolerance object (e.g., DaTolerance or PpmTolerance) defining
+            the acceptable deviation for mass matching.
 
     Returns:
-        List[Dict[str, Any]]: Each record contains peak m/z, matched formulas, and mass errors.
+        List[Dict[str, Any]]:
+            A list of dictionaries, where each dictionary corresponds to a single input peak
+            (in the same order as `peaks_mz`).  
+            Each dictionary contains the following keys:
+
+            - **"mz"** (`float`):  
+              The experimental m/z value of the peak.
+
+            - **"n_matches"** (`int`):  
+              The number of formula candidates whose theoretical mass falls within
+              the specified mass tolerance around this peak.
+
+            - **"matched_formulas"** (`List[str]`):  
+              List of the string representations of all matching formulas.
+
+            - **"mass_errors"** (`List[float]`):  
+              List of signed mass errors between the observed peak and each matched
+              formula’s theoretical mass. The unit corresponds to the tolerance type
+              (`Da` for DaTolerance, `ppm` for PpmTolerance).
+
+    Example:
+        >>> peaks = [100.0, 150.0]
+        >>> formulas = [Formula("C4H8O2"), Formula("C6H12O3")]
+        >>> tol = PpmTolerance(10)
+        >>> results = assign_formulas_to_peaks(peaks, formulas, tol)
+        >>> results[0]
+        {
+            'mz': 100.0,
+            'n_matches': 1,
+            'matched_formulas': ['C4H8O2'],
+            'mass_errors': [-2.3]
+        }
     """
 
     # --- Sort both peaks and formulas by mass ---
     sorted_peaks = sorted([(mz, i) for i, mz in enumerate(peaks_mz)], key=lambda x: x[0])
-    sorted_formulas = sorted([(str(f), f.exact_mass) for f in formulas], key=lambda x: x[1])
+    sorted_formulas = sorted([(str(f), f.exact_mass) for f in formula_candidates], key=lambda x: x[1])
 
     results = [{} for _ in peaks_mz]  # preserve original order
     f_idx = 0  # formula pointer
@@ -112,9 +150,8 @@ def assign_formulas_to_peaks(
         j = f_idx
         while j < n_formula and sorted_formulas[j][1] <= mz + mass_tolerance:
             name, exact_mass = sorted_formulas[j]
-            diff = mz - exact_mass
-            if abs(diff) <= mass_tolerance:
-                matches.append((name, abs(diff)))
+            if mass_tolerance.within(mz, exact_mass):
+                matches.append((name, mass_tolerance.error(mz, exact_mass)))
             j += 1
 
         # Store result

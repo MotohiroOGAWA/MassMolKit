@@ -5,6 +5,12 @@ class MassTolerance(ABC):
     def __init__(self, tolerance: float):
         self.tolerance = tolerance
 
+    @property
+    @abstractmethod
+    def unit(self) -> str:
+        """Return the unit name (e.g., 'Da' or 'ppm')."""
+        pass
+
     @abstractmethod
     def error(self, observed: float, theoretical: float) -> float:
         """Compute the signed mass error (Da or ppm)."""
@@ -41,6 +47,10 @@ class DaTolerance(MassTolerance):
     def __init__(self, tolerance: float):
         super().__init__(tolerance)
 
+    @property
+    def unit(self) -> str:
+        return "Da"
+
     def error(self, observed: float, theoretical: float) -> float:
         return observed - theoretical
 
@@ -53,6 +63,10 @@ class PpmTolerance(MassTolerance):
 
     def __init__(self, tolerance: float):
         super().__init__(tolerance)
+
+    @property
+    def unit(self) -> str:
+        return "ppm"
 
     def error(self, observed: float, theoretical: float) -> float:
         return (observed - theoretical) / theoretical * 1e6
