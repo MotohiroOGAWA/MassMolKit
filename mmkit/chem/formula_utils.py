@@ -143,7 +143,7 @@ def assign_formulas_to_peaks(
         matches = []
 
         # Move pointer to the first formula mass >= mz - tolerance
-        while f_idx > 0 and sorted_formulas[f_idx - 1][1] >= mz - mass_tolerance:
+        while f_idx > 0 and mass_tolerance.tolerance >= mass_tolerance.error(mz, sorted_formulas[f_idx - 1][1]):
             f_idx -= 1
 
         # Check all formulas in range [mz - tol, mz + tol]
