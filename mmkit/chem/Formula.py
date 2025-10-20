@@ -247,9 +247,9 @@ class Formula:
         return cls(elements=elements, charge=total_charge)
     
     @staticmethod
-    def base_formula() -> 'Formula':
+    def empty() -> 'Formula':
         """
-        Return a base formula with no elements and zero charge.
+        Return an empty Formula object (no elements, zero charge).
         """
         return Formula(elements={}, charge=0)
     
