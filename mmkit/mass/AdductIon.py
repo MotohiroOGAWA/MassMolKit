@@ -18,7 +18,7 @@ class AdductIon:
         pass
 
     def __repr__(self):
-        return f"AdductIon({self.compound.smiles}{self.adduct})"
+        return f"AdductIon({self.compound.smiles}{self.DELIM}{self.adduct})"
     
     def __str__(self) -> str:
         """

@@ -25,7 +25,7 @@ class Adduct:
             element_diff (Dict[str, int]): Dictionary of element differences.
             charge_offset (int): Additional charge offset to apply.
         """
-        assert ion_type in ["M", "F"], "ion_type must be one of 'M', 'F'"
+        assert ion_type in ["M", "F"], f"ion_type must be one of 'M' or 'F', but got '{ion_type}'."
         assert n_molecules >= 1, "n_molecules must be at least 1"
 
         self._ion_type = ion_type
@@ -50,7 +50,7 @@ class Adduct:
         Returns:
             Formula: Combined formula of the adduct.
         """
-        formula = Formula.base_formula()
+        formula = Formula.empty()
         for f, cnt in self._adduct_formulas.items():
             formula = formula + (f * cnt)
         return formula
@@ -75,6 +75,15 @@ class Adduct:
             int: Charge of the adduct.
         """
         return self._charge
+    
+    def set_charge(self, charge: int):
+        """
+        Set the charge of the adduct.
+        
+        Args:
+            charge (int): New charge value.
+        """
+        self._charge = charge
     
     def __repr__(self) -> str:
         """
