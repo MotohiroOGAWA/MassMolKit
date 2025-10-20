@@ -19,7 +19,7 @@ def calculate_dbe(elements: dict[str, int]) -> float:
     Raises:
         AssertionError: If unsupported elements are present.
     """
-    allowed_elements = {'C', 'H', 'O', 'N', 'P', 'S', 'F', 'Cl', 'Br', 'I'}
+    allowed_elements = {'C', 'H', 'O', 'N', 'P', 'S', 'F', 'Cl', 'Br', 'I', 'Na'}
     unsupported = set(elements.keys()) - allowed_elements
     assert not unsupported, f"Unsupported elements in formula: {unsupported}"
 
@@ -148,7 +148,7 @@ def assign_formulas_to_peaks(
 
         # Check all formulas in range [mz - tol, mz + tol]
         j = f_idx
-        while j < n_formula and sorted_formulas[j][1] <= mz + mass_tolerance:
+        while j < n_formula and mass_tolerance.error(mz, sorted_formulas[j][1]) >= -mass_tolerance.tolerance:
             name, exact_mass = sorted_formulas[j]
             if mass_tolerance.within(mz, exact_mass):
                 matches.append((name, mass_tolerance.error(mz, exact_mass)))
