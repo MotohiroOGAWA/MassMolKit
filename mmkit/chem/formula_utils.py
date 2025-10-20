@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 from itertools import product
 from typing import Generator
 from.Formula import Formula
@@ -74,25 +74,55 @@ def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0) -> Dict
     res = sorted(res, key=lambda f: (f.exact_mass, f.plain))
 
     return res
-
-def assign_formula_for_mz(
-    mz_list: float,
-    candidate_formulas: List[Formula],
-    mass_tolerance: float,
-) -> List[Formula]:
+    
+def assign_formulas_to_peaks(
+    peaks_mz: List[float],
+    formulas: List["Formula"],
+    mass_tolerance: float = 0.01
+) -> List[Dict[str, Any]]:
     """
-    Assign possible formulas to a given m/z value within a specified mass tolerance.
+    Efficiently assign candidate formulas to peaks using a two-pointer approach.
+
     Args:
-        mz_list (float): The m/z value to match.
-        candidate_formulas (List[Formula]): List of candidate formulas.
-        mass_tolerance (float): Mass tolerance in Daltons.
-    Returns:
-        List[Formula]: List of matched formulas within the mass tolerance.
-    """
-    matched_formulas = []
-    for formula in candidate_formulas:
-        mass = formula.exact_mass
-        if abs(mz_list - mass) <= mass_tolerance:
-            matched_formulas.append(formula)
-    return matched_formulas
+        peaks_mz (List[float]): Experimental peak m/z list (unsorted).
+        formulas (List[Formula]): Formula objects (must have 'plain' and 'exact_mass').
+        mass_tolerance (float): Allowed deviation in Da.
 
+    Returns:
+        List[Dict[str, Any]]: Each record contains peak m/z, matched formulas, and mass errors.
+    """
+
+    # --- Sort both peaks and formulas by mass ---
+    sorted_peaks = sorted([(mz, i) for i, mz in enumerate(peaks_mz)], key=lambda x: x[0])
+    sorted_formulas = sorted([(str(f), f.exact_mass) for f in formulas], key=lambda x: x[1])
+
+    results = [{} for _ in peaks_mz]  # preserve original order
+    f_idx = 0  # formula pointer
+    n_formula = len(sorted_formulas)
+
+    # --- Iterate over peaks (small → large) ---
+    for mz, orig_idx in sorted_peaks:
+        matches = []
+
+        # Move pointer to the first formula mass >= mz - tolerance
+        while f_idx > 0 and sorted_formulas[f_idx - 1][1] >= mz - mass_tolerance:
+            f_idx -= 1
+
+        # Check all formulas in range [mz - tol, mz + tol]
+        j = f_idx
+        while j < n_formula and sorted_formulas[j][1] <= mz + mass_tolerance:
+            name, exact_mass = sorted_formulas[j]
+            diff = mz - exact_mass
+            if abs(diff) <= mass_tolerance:
+                matches.append((name, abs(diff)))
+            j += 1
+
+        # Store result
+        results[orig_idx] = {
+            "mz": mz,
+            "n_matches": len(matches),
+            "matched_formulas": [m[0] for m in matches],
+            "mass_errors": [m[1] for m in matches],
+        }
+
+    return results
