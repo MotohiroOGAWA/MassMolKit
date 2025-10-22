@@ -1,16 +1,12 @@
 import os
-from typing import Union, List, Dict, Tuple, Literal
-from collections import defaultdict
+from typing import Union, List, Dict, Tuple, Literal, Set
 import dill
+import json
 import copy
+import re
 from enum import Enum
-import networkx as nx
 
 from ..chem.Compound import Compound
-from ..mass.Adduct import Adduct
-from ..mass.AdductedCompound import AdductedCompound
-from ..chem.Formula import Formula
-from .BondPosition import BondPosition
 
 
 class FragmentTree:
@@ -24,10 +20,10 @@ class FragmentTree:
         ORIGINAL = "original"
         TOPOLOGICAL = "topological"
 
-    def __init__(self, compound: Compound, nodes: List['FragmentNode'], edges: List['FragmentEdge']):
+    def __init__(self, compound: Compound, nodes: Dict[int, 'FragmentNode'], edges: Dict[Tuple[int, int], 'FragmentEdge']):
         self.compound = compound
-        self.nodes: List[FragmentNode] = nodes
-        self.edges: List[FragmentEdge] = edges
+        self.nodes: Dict[int, FragmentNode] = nodes
+        self.edges: Dict[Tuple[int, int], FragmentEdge] = edges
 
     def __repr__(self):
         return f"FragmentTree(compound={self.compound.smiles}, nodes={len(self.nodes)}, edges={len(self.edges)})"
@@ -39,8 +35,8 @@ class FragmentTree:
         """
         return FragmentTree(
             compound=compound,
-            nodes=[],
-            edges=[]
+            nodes={},
+            edges={}
         )
     
     @property
@@ -87,15 +83,17 @@ class FragmentNode:
     """
     FragmentNode class to represent a node in the fragment tree.
     """
-    def __init__(self, id:int, smiles: str):
+    def __init__(self, id:int, smiles: str, parent_ids: Tuple[int]=(), child_ids: Tuple[int]=()):
         self.id = id
         self.smiles = smiles
+        self.parent_ids = tuple(set(parent_ids))
+        self.child_ids = tuple(set(child_ids))
 
     def __repr__(self):
         return f"FragmentNode(id={self.id}, smiles={self.smiles})"
 
     def __str__(self):
-        return f"(id={self.id}, {self.smiles})"
+        return f"(id={self.id};{self.smiles};parents={list(self.parent_ids)};children={list(self.child_ids)})"
 
     def copy(self) -> 'FragmentNode':
         """
@@ -104,7 +102,23 @@ class FragmentNode:
         return FragmentNode(
             id=self.id,
             smiles=self.smiles,
+            parent_ids=tuple(self.parent_ids),
+            child_ids=tuple(self.child_ids),
         )
+    
+    def add_parent(self, parent_id: int):
+        """
+        Add a parent ID to the FragmentNode.
+        """
+        if parent_id not in self.parent_ids:
+            self.parent_ids = tuple(set(self.parent_ids + (parent_id,)))
+
+    def add_child(self, child_id: int):
+        """
+        Add a child ID to the FragmentNode.
+        """
+        if child_id not in self.child_ids:
+            self.child_ids = tuple(set(self.child_ids + (child_id,)))
 
     @staticmethod
     def parse(text: str) -> "FragmentNode":
@@ -122,29 +136,39 @@ class FragmentNode:
         if not text.startswith("id="):
             raise ValueError(f"Invalid FragmentNode string: missing 'id=' prefix → {text}")
         
-        # Separate "id=1" and the rest
-        try:
-            id_part, rest = text.split(",", 1)
-            node_id = int(id_part.replace("id=", "").strip())
-        except Exception as e:
-            raise ValueError(f"Failed to parse id: {e} → {text}")
+        parts = [p.strip() for p in text.split(";")]
 
-        smiles = rest.strip()
+        # id
+        if not parts[0].startswith("id="):
+            raise ValueError(f"Invalid format: {text}")
+        node_id = int(parts[0].replace("id=", "").strip())
 
-        return FragmentNode(node_id, smiles)
+        # smiles
+        smiles = parts[1].strip()
+
+        # parents / children
+        parent_ids, child_ids = [], []
+        for part in parts[2:]:
+            if part.startswith("parents="):
+                parent_ids = [int(x) for x in part.replace("parents=", "").strip(" []").split(",") if x]
+            elif part.startswith("children="):
+                child_ids = [int(x) for x in part.replace("children=", "").strip(" []").split(",") if x]
+
+        node = FragmentNode(node_id, smiles, parent_ids, child_ids)
+        return node
 
     @staticmethod
     def header() -> str:
         """
         Return the header for the TSV representation of FragmentNode.
         """
-        return "ID\tSMILES\n"
+        return "ID\tSMILES\tParents\tChildren\n"
 
     def to_tsv(self):
         """
         Convert the FragmentNode to a TSV string.
         """
-        return f"{self.id}\t{self.smiles}\n"
+        return f"{self.id}\t{self.smiles}\t{self.parent_ids}\t{self.child_ids}\n"
 
 class FragmentEdge:
     def __init__(
@@ -179,6 +203,40 @@ class FragmentEdge:
             f"cleavage_records={self.cleavage_records})"
         )
     
+    def __str__(self):
+        cleavages_json = json.dumps(self.cleavage_records, ensure_ascii=False)
+        return f"(src={self.source_id}; tgt={self.target_id}; cleavages={cleavages_json})"
+
+    @staticmethod
+    def parse(text: str) -> "FragmentEdge":
+        """
+        Parse a string created by __str__() back into a FragmentEdge.
+        Expected format:
+            (src=0; tgt=1; cleavages=["C1-C2","C3-O4"])
+        """
+        text = text.strip()
+        if text.startswith("(") and text.endswith(")"):
+            text = text[1:-1]
+
+        # --- source id ---
+        m_src = re.search(r"src=(\d+)", text)
+        m_tgt = re.search(r"tgt=(\d+)", text)
+        m_clv = re.search(r"cleavages=(\[.*\])", text)
+
+        if not (m_src and m_tgt and m_clv):
+            raise ValueError(f"Invalid FragmentEdge string: {text}")
+
+        source_id = int(m_src.group(1))
+        target_id = int(m_tgt.group(1))
+        cleavages_json = m_clv.group(1)
+
+        try:
+            cleavage_records = tuple(json.loads(cleavages_json))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse cleavage_records: {e} → {cleavages_json}")
+
+        return FragmentEdge(source_id, target_id, cleavage_records)
+
     def copy(self) -> 'FragmentEdge':
         """
         Create a copy of the FragmentEdge.

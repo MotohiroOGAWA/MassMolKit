@@ -230,6 +230,7 @@ class Adduct:
             Formula: Resulting formula after adduct addition.
         """
         total_formula = neutral_formula * self._n_molecules + self.formula_shift
+        total_formula._charge = self.charge
         return total_formula
     
     def calc_mass(self, neutral_mass: float) -> float:

@@ -37,6 +37,7 @@ class CleavagePattern:
 
         # Extract the reactant SMARTS part to use for substructure matching
         reactant_smarts = smirks.split(">>")[0]
+        product_smarts = smirks.split(">>")[1]
         self.reactant_query = Chem.MolFromSmarts(reactant_smarts)
 
         # --- Basic validation (only single-reactant/product reactions are supported)
@@ -48,16 +49,22 @@ class CleavagePattern:
         self.prod_temp = self.rxn.GetProducts()[0]
 
         # --- Validate atom map numbers in reactants
-        react_map_nums = [a.GetAtomMapNum() for a in self.react_temp.GetAtoms()]
-        assert all(x > 0 for x in react_map_nums), f"Invalid AtomMapNum: {react_map_nums}"
-        assert len(set(react_map_nums)) == len(react_map_nums), "Duplicate AtomMapNum in reactants."
-        self.react_idx_to_map = bidict({i: amap for i, amap in enumerate(react_map_nums)})
+        react_map_nums = [a.GetAtomMapNum() for a in self.react_temp.GetAtoms() if a.GetAtomMapNum() > 0]
+        # assert all(x > 0 for x in react_map_nums), f"Invalid AtomMapNum: {react_map_nums}"
+        self.react_idx_to_map = bidict({i: amap for i, amap in enumerate(set(react_map_nums))})
 
         # --- Validate atom map numbers in products
-        prod_map_nums = [a.GetAtomMapNum() for a in self.prod_temp.GetAtoms()]
-        assert all(x > 0 for x in prod_map_nums), f"Invalid AtomMapNum: {prod_map_nums}"
-        assert len(set(prod_map_nums)) == len(prod_map_nums), "Duplicate AtomMapNum in products."
-        self.prod_idx_to_map = bidict({i: amap for i, amap in enumerate(prod_map_nums)})
+        prod_map_nums = [a.GetAtomMapNum() for a in self.prod_temp.GetAtoms() if a.GetAtomMapNum() > 0]
+        # assert all(x > 0 for x in prod_map_nums), f"Invalid AtomMapNum: {prod_map_nums}"
+        self.prod_idx_to_map = bidict({i: amap for i, amap in enumerate(set(prod_map_nums))})
+        
+
+        missing_maps = set(react_map_nums) - set(prod_map_nums)
+        self.virtual_smirks = f"{reactant_smarts}>>{product_smarts}" + ("."+".".join(
+            [f"[*:{m}]" for m in missing_maps]
+        )) if len(missing_maps) > 0 else f""
+        self.virtual_rxn = rdChemReactions.ReactionFromSmarts(self.virtual_smirks)
+        pass
 
     def __repr__(self):
         return f"{self.__class__.__name__}(name='{self.name}', smirks='{self.smirks}')"
@@ -213,7 +220,7 @@ class CleavagePattern:
         idx_to_atom_map = bidict({a.GetIdx(): a.GetAtomMapNum() for a in mol.GetAtoms()})
 
         # Apply the SMIRKS pattern to the molecule
-        product_sets = self.rxn.RunReactants((mol,))
+        product_sets = self.virtual_rxn.RunReactants((mol,))
         # Identify all substructure matches corresponding to the reactant query
         reactant_matches = list(mol.GetSubstructMatches(self.reactant_query))
 
@@ -221,12 +228,12 @@ class CleavagePattern:
 
         # Each product_set may contain multiple product molecules
         for product_group in product_sets:
+            frag_info = {
+                'react': [-1] * len(self.react_idx_to_map),
+                'prod': [-1] * len(self.prod_idx_to_map),
+            }
+            atom_mapping_cache = {}
             for product_mol in product_group:
-                frag_info = {
-                    'react': [-1] * len(self.react_idx_to_map),
-                    'prod': [-1] * len(self.prod_idx_to_map),
-                }
-                atom_mapping_cache = {}
 
                 # -----------------------------------------------------------------
                 # (1) Extract RDKit's atom-level correspondence from reaction result
@@ -237,7 +244,10 @@ class CleavagePattern:
                         if parent_idx in idx_to_atom_map:
                             atom_map = idx_to_atom_map[parent_idx]
                             react_idx = self.react_idx_to_map.inverse[old_mapno]
-                            prod_idx = self.prod_idx_to_map.inverse[old_mapno]
+                            if old_mapno in self.prod_idx_to_map.inverse:
+                                prod_idx = self.prod_idx_to_map.inverse[old_mapno]
+                            else:
+                                prod_idx = -1
                             old_idx_in_canonical = old_atom_map_to_idx[atom_map]
 
                             atom_mapping_cache[atom_map] = {
@@ -247,46 +257,37 @@ class CleavagePattern:
                             }
                             atom.SetAtomMapNum(idx_to_atom_map[parent_idx])
 
-                # -----------------------------------------------------------------
-                # (2) Build new compound and compute final index mapping
-                new_compound = Compound(product_mol)
-                if not self.is_applicable(new_compound):
-                    continue
-                new_atom_map_to_idx = new_compound.atom_map_to_idx
-                mapped_pairs = []
+            # -----------------------------------------------------------------
+            # (2) Build new compound and compute final index mapping
+            new_compound = Compound(product_group[0])
+            if not self.is_applicable(new_compound):
+                continue
+            new_atom_map_to_idx = new_compound.atom_map_to_idx
+            mapped_pairs = []
 
-                for atom_map, info in atom_mapping_cache.items():
+            for atom_map, info in atom_mapping_cache.items():
+                frag_info['react'][info['react_idx']] = info['old_idx']
+                if info['prod_idx'] != -1:
                     new_idx = new_atom_map_to_idx[atom_map]
-                    frag_info['react'][info['react_idx']] = info['old_idx']
-                    if info['prod_idx'] != -1:
-                        frag_info['prod'][info['prod_idx']] = new_idx
-                        mapped_pairs.append((info['react_idx'], idx_to_atom_map.inverse[atom_map]))
+                    frag_info['prod'][info['prod_idx']] = new_idx
+                    mapped_pairs.append((info['react_idx'], idx_to_atom_map.inverse[atom_map]))
 
-                # -----------------------------------------------------------------
-                # (3) Fill remaining reactant indices by matching with substructure
-                for react_match in reactant_matches:
-                    if all(react_match[ridx] == aidx for ridx, aidx in mapped_pairs):
-                        for i, idx in enumerate(react_match):
-                            frag_info['react'][i] = old_atom_map_to_idx[idx_to_atom_map[idx]]
-                        reactant_matches.remove(react_match)
-                        break
+            # -----------------------------------------------------------------
+            # (3) Consistency check
+            assert all(idx != -1 for idx in frag_info['react']), \
+                "Not all reactant indices were mapped."
+            assert all(idx != -1 for idx in frag_info['prod']), \
+                "Not all product indices were mapped."
 
-                # -----------------------------------------------------------------
-                # (4) Consistency check
-                assert all(idx != -1 for idx in frag_info['react']), \
-                    "Not all reactant indices were mapped."
-                assert all(idx != -1 for idx in frag_info['prod']), \
-                    "Not all product indices were mapped."
-
-                # -----------------------------------------------------------------
-                # (5) Append the result
-                fragment_products.append(
-                    FragmentProduct(
-                        smiles=new_compound.smiles,
-                        reactant_indices=tuple(frag_info['react']),
-                        product_indices=tuple(frag_info['prod'])
-                    )
+            # -----------------------------------------------------------------
+            # (4) Append the result
+            fragment_products.append(
+                FragmentProduct(
+                    smiles=new_compound.smiles,
+                    reactant_indices=tuple(frag_info['react']),
+                    product_indices=tuple(frag_info['prod'])
                 )
+            )
         fragment_result = FragmentResult(
             cleavage=self.copy(),
             reactant_smiles=compound.smiles,

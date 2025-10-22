@@ -18,9 +18,11 @@ class Fragmenter:
             self,
             max_depth: int,
             cleavage_pattern_lib: CleavagePatternLibrary,
+            only_add_min_depth: bool = True
             ):
         self.max_depth = max_depth
         self.cleavage_pattern_lib = cleavage_pattern_lib
+        self.only_add_min_depth = only_add_min_depth
 
     def to_dict(self) -> Dict[str, str]:
         """
@@ -29,6 +31,7 @@ class Fragmenter:
         return {
             "max_depth": self.max_depth,
             "cleavage_pattern_lib": self.cleavage_pattern_lib.to_dict(),
+            "only_add_min_depth": self.only_add_min_depth
         }
 
     @classmethod
@@ -40,7 +43,8 @@ class Fragmenter:
         cleavage_pattern_lib = CleavagePatternLibrary.from_dict(
             data.get("cleavage_pattern_lib", {})
         )
-        return cls(max_depth=max_depth, cleavage_pattern_lib=cleavage_pattern_lib)
+        only_add_min_depth = bool(data.get("only_add_min_depth", False))
+        return cls(max_depth=max_depth, cleavage_pattern_lib=cleavage_pattern_lib, only_add_min_depth=only_add_min_depth)
 
     def save_json(self, path: str):
         """Save the library to a JSON file."""
@@ -82,63 +86,67 @@ class Fragmenter:
             if (time.time() - start_time) > timeout_seconds:
                 raise TimeoutError("Fragmentation process timed out.")
 
-        nodes: List[FragmentNode] = []
-        edges: List[FragmentEdge] = []
+        nodes: Dict[int, FragmentNode] = {}
+        edges: Dict[Tuple[int, int], FragmentEdge] = {}
         smi_to_node_id: Dict[str, int] = {}
-        node_id_pair_to_edge_id: Dict[Tuple[int, int], int] = {}
         processed_node_ids = set()
+        node_depths = {}
 
 
-        def get_set_node_idx(smiles:str) -> int:
+        def get_set_node_idx(smiles:str, depth:int) -> int:
             if smiles in smi_to_node_id:
                 return smi_to_node_id[smiles]
             else:
                 node_idx = len(nodes)
-                nodes.append(FragmentNode(node_idx, smiles))
+                nodes[node_idx] = FragmentNode(node_idx, smiles)
                 smi_to_node_id[smiles] = node_idx
+                node_depths[node_idx] = depth
             return node_idx
         
         def get_set_edge_idx(
                 source_node_idx:int,
                 target_node_idx:int,
                 product_mapping_str:str,
+                depth:int,
                 ) -> int:
             edge_key = (source_node_idx, target_node_idx)
-            if edge_key in node_id_pair_to_edge_id:
-                edge_idx = node_id_pair_to_edge_id[edge_key]
-                if product_mapping_str not in edges[edge_idx].cleavage_records:
-                    edges[edge_idx].cleavage_records += (product_mapping_str,)
-                return edge_idx
+            if self.only_add_min_depth and depth > node_depths[target_node_idx]:
+                return -1
+            
+            if edge_key in edges:
+                edges[edge_key].try_add_cleavage_record(product_mapping_str)
+                return edge_key
             else:
-                edge_idx = len(edges)
-                edges.append(
-                    FragmentEdge(
-                        source_node_idx,
-                        target_node_idx,
-                        (product_mapping_str,)
-                    )
+                edges[edge_key] = FragmentEdge(
+                    source_node_idx,
+                    target_node_idx,
+                    (product_mapping_str,)
                 )
-                node_id_pair_to_edge_id[edge_key] = edge_idx
-            return edge_idx
+            nodes[source_node_idx].add_child(target_node_idx)
+            nodes[target_node_idx].add_parent(source_node_idx)
+
+            return edge_key
 
         def add_data(
                 source_smiles:str,
                 target_smiles:str,
-                product_mapping_str:str
+                product_mapping_str:str,
+                depth:int,
                 ) -> Tuple[int, int, int]:
-            src_node_idx = get_set_node_idx(source_smiles)
-            tgt_node_idx = get_set_node_idx(target_smiles)
+            src_node_idx = get_set_node_idx(source_smiles, depth=depth)
+            tgt_node_idx = get_set_node_idx(target_smiles, depth=depth)
 
             edge_idx = get_set_edge_idx(
                 src_node_idx,
                 tgt_node_idx,
-                product_mapping_str
+                product_mapping_str,
+                depth=depth,
             )
             return src_node_idx, tgt_node_idx, edge_idx
             
             
         root_compound = compound.copy()
-        node_idx = get_set_node_idx(root_compound.smiles)
+        node_idx = get_set_node_idx(root_compound.smiles, depth=0)
 
         next_node_ids = [node_idx]
         for depth in range(1, self.max_depth + 1):
@@ -163,7 +171,8 @@ class Fragmenter:
                         src_node_idx, tgt_node_idx, edge_idx = add_data(
                             source_smiles,
                             target_smiles,
-                            product_mapping_str
+                            product_mapping_str,
+                            depth=depth,
                         )
                         new_node_ids.add(tgt_node_idx)
                 processed_node_ids.add(node_idx)
