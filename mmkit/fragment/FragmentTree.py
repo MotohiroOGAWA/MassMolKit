@@ -8,7 +8,7 @@ import networkx as nx
 
 from ..chem.Compound import Compound
 from ..mass.Adduct import Adduct
-from ..mass.AdductIon import AdductIon
+from ..mass.AdductedCompound import AdductedCompound
 from ..chem.Formula import Formula
 from .BondPosition import BondPosition
 
@@ -43,261 +43,119 @@ class FragmentTree:
             edges=[]
         )
     
-    def get_node_count(self) -> int:
+    @property
+    def num_nodes(self) -> int:
         """
         Get the number of nodes in the fragment tree.
         """
         return len(self.nodes)
     
-    def get_edge_count(self) -> int:
+    @property
+    def num_edges(self) -> int:
         """
         Get the number of edges in the fragment tree.
         """
         return len(self.edges)
     
-    def get_all_formulas(self, sources: bool = False) -> Union[Tuple[Formula, ...], Dict[Formula, List[str]]]:
+    def save(self, file_path: str):
         """
-        Get all formulas from the fragment tree.
+        Save this FragmentTree to a .dill file.
+        Args:
+            file_path (str): Output path to save the file.
         """
-        if sources:
-            formulas = defaultdict(list)
-        else:
-            formulas = set()
+        # Ensure parent directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-        for node in self.nodes:
-            for adduct in node.adducts:
-                adduct_ion = AdductIon(
-                    compound=Compound.from_smiles(node.smiles),
-                    adduct=Adduct.parse(adduct),
-                )
-                if sources:
-                    formulas[adduct_ion.formula].append(f'{node.smiles}|{adduct}')
-                else:
-                    formulas.add(adduct_ion.formula)
-        if sources:
-            # Convert defaultdict to a regular dict for consistent output
-            formulas = [(k, v) for k, v in formulas.items()]
-            formulas.sort(key=lambda x: x[0].exact_mass)
-            formulas = {k: v for k, v in formulas}
-            return formulas
-        else:
-            formulas = list(formulas)
-            formulas.sort(key=lambda x: x.exact_mass)
-            return tuple(formulas)
-        
-    def get_all_adduct_ions(self) -> Dict[Formula, List[AdductIon]]:
-        """
-        Get all AdductIons from the fragment tree.
-        """
-        formulas = defaultdict(list)
-
-        for node in self.nodes:
-            for adduct in node.adducts:
-                adduct_ion = AdductIon(
-                    compound=Compound.from_smiles(node.smiles),
-                    adduct=Adduct.parse(adduct),
-                )
-                formulas[adduct_ion.formula].append(adduct_ion)
-        # Convert defaultdict to a regular dict for consistent output
-        formulas = [(k, v) for k, v in formulas.items()]
-        formulas.sort(key=lambda x: x[0].exact_mass)
-        formulas = {k: v for k, v in formulas}
-        return formulas
-    
-    def save(self, path: str):
-        """
-        Save the fragment tree to a file.
-        """
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        dill.dump(self, open(path, 'wb'))
+        with open(file_path, "wb") as f:
+            dill.dump(self, f, protocol=dill.HIGHEST_PROTOCOL)
 
     @staticmethod
-    def load(path: str) -> 'FragmentTree':
+    def load(file_path: str) -> 'FragmentTree':
         """
-        Load a fragment tree from a file.
+        Load a FragmentTree object from a .dill file.
+        Args:
+            file_path (str): Path to the saved file.
+        Returns:
+            FragmentTree: Loaded instance.
         """
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"FragmentTree file not found: {path}")
-        return dill.load(open(path, 'rb'))
+        with open(file_path, "rb") as f:
+            tree = dill.load(f)
 
-    def rebuild_tree_topologically(self) -> 'FragmentTree':
-        new_edges = []
-        node_depths = {}
-        node_depths[0] = 0
-        for edge in self.edges:
-            if edge.source_id not in node_depths:
-                raise ValueError(f"Source ID {edge.source_id} not found")
-            
-            depth = node_depths[edge.source_id] + 1
-            if edge.target_id in node_depths:
-                if depth < node_depths[edge.target_id]:
-                    raise ValueError("Ordering error: target depth is greater than source depth")
-                elif depth == node_depths[edge.target_id]:
-                    pass
-                else:
-                    continue  # Skip this edge if the target depth is less than source depth
-            else:
-                node_depths[edge.target_id] = depth
-            
-            new_edges.append(edge.copy())
-        
-        tree = FragmentTree(
-            compound=self.compound.copy(),
-            nodes=copy.deepcopy(self.nodes),
-            edges=new_edges
-        )
-        return tree, {'depth': node_depths}
-        
-    
-    def save_tsv(self, node_path: str, edge_path: str, structure_type: StructureType = StructureType.ORIGINAL):
-        """
-        Save FragmentTree to two TSV files (Cytoscape-compatible):
-        - nodes.tsv: id, smiles
-        - edges.tsv: source, target, fragment_index, bond_positions, attribute
-
-        Parameters:
-            structure_type (StructureType): which structure to export (original or topological)
-        """
-        if structure_type == FragmentTree.StructureType.ORIGINAL:
-            # Use the original tree
-            tree = self
-            info = None
-        elif structure_type == FragmentTree.StructureType.TOPOLOGICAL:
-            tree, info = self.rebuild_tree_topologically()
-        else:
-            raise NotImplementedError(f"Structure type {structure_type} is not implemented")
-        
-        # Save nodes
-        os.makedirs(os.path.dirname(node_path), exist_ok=True)
-        with open(node_path, mode='w', newline='', encoding='utf-8') as f:
-            f.write(FragmentNode.header() + "\n")
-            for i, node in enumerate(tree.nodes):
-                f.write(f"{i}\t{node.to_tsv()}\n")
-
-        # Save edges
-        os.makedirs(os.path.dirname(edge_path), exist_ok=True)
-        with open(edge_path, mode='w', newline='', encoding='utf-8') as f:
-            f.write(FragmentEdge.header() + "\n")
-            for edge in tree.edges:
-                f.write(edge.to_tsv() + "\n")
-
-        return tree, info
-    
-    def save_topological_tsv(self, node_path: str, edge_path: str, layer_scale: float = 10.0, iterations: int = 1000):
-        """
-        Save FragmentTree to two TSV files (Cytoscape-compatible) in topological order.
-        """
-        tree, info = self.save_tsv(node_path, edge_path, structure_type=FragmentTree.StructureType.TOPOLOGICAL)
-        G = nx.DiGraph()
-        G.add_edges_from((edge.source_id, edge.target_id) for edge in tree.edges)
-        depth = info['depth']
-        max_depth = max(depth.values())
-
-        # Add a virtual node to pull everything downward
-        # Connect all real nodes to the virtual node
-        # Use larger weights for deeper nodes to pull them harder
-        virtual_node = -1
-        G.add_node(virtual_node)
-
-        for node, d in depth.items():
-            G.add_edge(node, virtual_node, weight=(d + 1)/(max_depth + 1))
-
-        # Set fixed positions for root and virtual node
-        fixed = [0, virtual_node]
-        pos = {
-            0: (0, 0),               # Root node fixed at top
-            virtual_node: (0, (max_depth+1) * layer_scale)  # Virtual node fixed far below
-        }
-
-
-        # Get 1D spring layout
-        pos_1d = nx.spring_layout(G, dim=2, pos=pos, fixed=fixed, weight='weight', iterations=iterations)
-        pos_2d = {
-            node: (float(pos_1d[node][0]), depth[node] * layer_scale)
-            for node in G.nodes if node != virtual_node
-        }
-
-        x_by_depth = defaultdict(list)
-        for node_id, (x, _) in pos_2d.items():
-            depth = info['depth'][node_id]
-            x_by_depth[depth].append(x)
-
-        max_width = max(
-            (max(xs) - min(xs)) for xs in x_by_depth.values() if len(xs) > 1
-        )
-        max_x_cnt = max(
-            len(xs) for xs in x_by_depth.values() if len(xs) > 1
-        )
-
-        x_scale = max_x_cnt * layer_scale / max_width
-        for node_id, (x, y) in pos_2d.items():
-            pos_2d[node_id] = (x * x_scale, y)
-
-        node_filename, _ = os.path.splitext(node_path)
-        pos_path = node_filename + "_positions.tsv"
-
-        with open(pos_path, mode='w', newline='', encoding='utf-8') as f:
-            f.write("id\tx\ty\n")
-            for node_id, (x, y) in pos_2d.items():
-                f.write(f"{node_id}\t{x}\t{y}\n")
-
+        return tree
 
 class FragmentNode:
     """
     FragmentNode class to represent a node in the fragment tree.
     """
-    def __init__(self, smiles: str, adduct_strs: Tuple[str]):
+    def __init__(self, id:int, smiles: str):
+        self.id = id
         self.smiles = smiles
-        self.adducts = tuple(set(adduct_strs))
 
     def __repr__(self):
-        return str(self)
+        return f"FragmentNode(id={self.id}, smiles={self.smiles})"
 
     def __str__(self):
-        return f"FragmentNode({self.smiles}, adducts={'|'.join(str(adduct) for adduct in self.adducts)})"
+        return f"(id={self.id}, {self.smiles})"
 
     def copy(self) -> 'FragmentNode':
         """
         Create a copy of the FragmentNode.
         """
         return FragmentNode(
+            id=self.id,
             smiles=self.smiles,
-            adduct_strs=tuple(self.adducts)
         )
+
+    @staticmethod
+    def parse(text: str) -> "FragmentNode":
+        """
+        Parse a string created by __str__() back into a FragmentNode.
+        Expected format:
+            (id=1, CC(=O)O)
+        """
+        # --- Cleanup ---
+        text = text.strip()
+        if text.startswith("(") and text.endswith(")"):
+            text = text[1:-1]  # remove parentheses
+
+        # --- Split off id= ---
+        if not text.startswith("id="):
+            raise ValueError(f"Invalid FragmentNode string: missing 'id=' prefix → {text}")
+        
+        # Separate "id=1" and the rest
+        try:
+            id_part, rest = text.split(",", 1)
+            node_id = int(id_part.replace("id=", "").strip())
+        except Exception as e:
+            raise ValueError(f"Failed to parse id: {e} → {text}")
+
+        smiles = rest.strip()
+
+        return FragmentNode(node_id, smiles)
 
     @staticmethod
     def header() -> str:
         """
         Return the header for the TSV representation of FragmentNode.
         """
-        return "id\tsmiles\tadducts"
+        return "ID\tSMILES\n"
 
     def to_tsv(self):
         """
         Convert the FragmentNode to a TSV string.
         """
-        return f"{self.smiles}\t{'|'.join(str(adduct) for adduct in self.adducts)}"
+        return f"{self.id}\t{self.smiles}\n"
 
 class FragmentEdge:
     def __init__(
         self,
         source_id: int,
         target_id: int,
-        cleavage_records: Tuple[Tuple[str, int, Tuple[int]]], # e.g. (smirks, frag_idx, (bond_pos,))
-        attribute: Dict = {},
+        cleavage_records: Tuple[str],
     ):
         self.source_id = source_id
         self.target_id = target_id
-        cle_records = []
-        for smirks, frag_idx, bond_poses in cleavage_records:
-            assert isinstance(smirks, str), "smirks must be a string"
-            assert isinstance(frag_idx, int), "frag_idx must be an integer"
-            assert isinstance(bond_poses, tuple), "bond_positions must be a tuple of integers"
-            assert all(isinstance(bond_pos, int) for bond_pos in bond_poses), "bond_positions must be a tuple of integers"
-            sorted_bonds = tuple(sorted(bond_poses))
-            cle_records.append((smirks, frag_idx, sorted_bonds))
-        self.cleavage_records = tuple(set(cle_records))
-        self.attribute = attribute
+        self.cleavage_records = tuple(sorted(cleavage_records))
 
     def __eq__(self, other):
         if not isinstance(other, FragmentEdge):
@@ -305,23 +163,20 @@ class FragmentEdge:
         return (
             self.source_id == other.source_id and
             self.target_id == other.target_id and
-            self.cleavage_records == other.cleavage_records and
-            self.attribute == other.attribute
+            self.cleavage_records == other.cleavage_records
         )
 
     def __hash__(self):
         return hash((
             self.source_id,
             self.target_id,
-            frozenset(self.cleavage_records),
-            frozenset(self.attribute.items())
+            frozenset(self.cleavage_records)
         ))
 
     def __repr__(self):
         return (
             f"FragmentEdge({self.source_id} -> {self.target_id}, "
-            f"cleavage_records={self.cleavage_records}, "
-            f"attr={self.attribute})"
+            f"cleavage_records={self.cleavage_records})"
         )
     
     def copy(self) -> 'FragmentEdge':
@@ -331,23 +186,30 @@ class FragmentEdge:
         return FragmentEdge(
             source_id=self.source_id,
             target_id=self.target_id,
-            cleavage_records=tuple(self.cleavage_records),
-            attribute=self.attribute.copy()
+            cleavage_records=tuple(self.cleavage_records)
         )
     
+    def try_add_cleavage_record(self, record: str) -> bool:
+        """
+        Try to add a cleavage record to the edge.
+        Returns True if added, False if already present.
+        """
+        if record in self.cleavage_records:
+            return False
+        else:
+            self.cleavage_records = tuple(sorted(self.cleavage_records + (record,)))
+            return True
+    
     @staticmethod
-    def header(attributes: Tuple[str] = ('FragmentType', 'Adduct')) -> str:
+    def header() -> str:
         """
         Return the header for the TSV representation of FragmentEdge.
         """
-        attr_header = "\t".join(attributes)
-        return f"Source\tTarget\tCleavages\t{attr_header}"
+        return f"Source\tTarget\tCleavages\n"
 
-    def to_tsv(self, attributes: Tuple[str] = ('fragment_type', 'adduct')) -> str:
+    def to_tsv(self) -> str:
         """
         Convert the FragmentEdge to a TSV string.
         """
-        attr_str = '\t'.join(
-            str(self.attribute.get(attr, '')) for attr in attributes
-        )
-        return f"{self.source_id}\t{self.target_id}\t{str(self.cleavage_records)}\t{attr_str}"
+        return f"{self.source_id}\t{self.target_id}\t{str(self.cleavage_records)}\n"
+

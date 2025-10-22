@@ -1,70 +1,350 @@
-from typing import Tuple
+from typing import Tuple, List, Dict, Any
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdChemReactions
+from bidict import bidict
+import re
+import json
+import inspect
+
+from ..chem.Compound import Compound
+from .FragmentResult import FragmentResult, FragmentProduct
 
 class CleavagePattern:
-    def __init__(self, name: str, smirks: str):
+    SUPPORTED_CHARGE_MODES = {"positive1", "negative1", "neutral", "any"}
+    def __init__(self, smirks: str, name: str="", charge_mode: str="any"):
         """
-        Cleavage pattern defined as SMIRKS.
+        Define a cleavage pattern using a SMIRKS reaction.
         Args:
-            name (str): Pattern name (e.g. "amide bond cleavage").
             smirks (str): SMIRKS reaction string.
+            name (str): Pattern name (e.g. "amide bond cleavage").
+            charge_mode (str): Allowed charge states (can be multiple separated by '|').
+                Examples:
+                    - "positive1"
+                    - "negative1"
+                    - "neutral"
+                    - "any"
+                    - "positive1|neutral"
         """
-        self.name = name
+        self.version = 1.0
         self.smirks = smirks
+        self.name = name
+        charge_modes = [cm.strip().lower() for cm in charge_mode.split("|")]
+        assert all(cm in self.SUPPORTED_CHARGE_MODES for cm in charge_modes), \
+            f"Unsupported charge_mode: {charge_mode}"
+        self.charge_mode = "|".join(sorted(charge_modes))
         self.rxn = rdChemReactions.ReactionFromSmarts(smirks)
 
+        # Extract the reactant SMARTS part to use for substructure matching
         reactant_smarts = smirks.split(">>")[0]
         self.reactant_query = Chem.MolFromSmarts(reactant_smarts)
 
-    def exists(self, mol: Chem.Mol) -> bool:
+        # --- Basic validation (only single-reactant/product reactions are supported)
+        assert len(self.rxn.GetReactants()) == 1, "Only single-reactant patterns are supported."
+        assert len(self.rxn.GetProducts()) == 1, "Only single-product patterns are supported."
+
+        # --- Initialize reactant and product templates
+        self.react_temp = self.rxn.GetReactants()[0]
+        self.prod_temp = self.rxn.GetProducts()[0]
+
+        # --- Validate atom map numbers in reactants
+        react_map_nums = [a.GetAtomMapNum() for a in self.react_temp.GetAtoms()]
+        assert all(x > 0 for x in react_map_nums), f"Invalid AtomMapNum: {react_map_nums}"
+        assert len(set(react_map_nums)) == len(react_map_nums), "Duplicate AtomMapNum in reactants."
+        self.react_idx_to_map = bidict({i: amap for i, amap in enumerate(react_map_nums)})
+
+        # --- Validate atom map numbers in products
+        prod_map_nums = [a.GetAtomMapNum() for a in self.prod_temp.GetAtoms()]
+        assert all(x > 0 for x in prod_map_nums), f"Invalid AtomMapNum: {prod_map_nums}"
+        assert len(set(prod_map_nums)) == len(prod_map_nums), "Duplicate AtomMapNum in products."
+        self.prod_idx_to_map = bidict({i: amap for i, amap in enumerate(prod_map_nums)})
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(name='{self.name}', smirks='{self.smirks}')"
+    
+    def __str__(self):
+        sig = inspect.signature(self.__init__)
+        arg_names = [p.name for p in sig.parameters.values() if p.name != "self"]
+
+        fields = [f"v={self.version}"]
+        for name in arg_names:
+            if hasattr(self, name):
+                value = getattr(self, name)
+                if isinstance(value, str):
+                    value_str = f'"{value}"'
+                else:
+                    value_str = str(value)
+                fields.append(f"{name}={value_str}")
+
+        return f"{self.__class__.__name__};" + ";".join(fields)
+    
+    def copy(self) -> 'CleavagePattern':
         """
-        Check if the cleavage pattern exists in the molecule.
+        Create a copy of this CleavagePattern instance.
+        Returns:
+            CleavagePattern: A new instance with the same attributes.
+        """
+        sig = inspect.signature(self.__init__)
+        init_args = [p.name for p in sig.parameters.values() if p.name != "self"]
+
+        kwargs = {arg: getattr(self, arg) for arg in init_args if hasattr(self, arg)}
+
+        return self.__class__(**kwargs)
+    
+    @classmethod
+    def parse(cls, pattern_str: str) -> 'CleavagePattern':
+        """
+        Parse a CleavagePattern from its string representation.
+        Args:
+            pattern_str (str): String representation of the pattern.
+
+        Returns:
+            CleavagePattern: The parsed cleavage pattern.
+        """
+        # 1. Remove class name prefix if present
+        if pattern_str.startswith(cls.__name__):
+            pattern_str = pattern_str[len(cls.__name__):].lstrip(";")
+
+        # 2. Regex: match key=value pairs where value may be quoted and contain semicolons
+        # Example match groups: key="smirks", value="[C:1]-[O:2];[P:3]>>[C:1]"
+        pattern = re.compile(r'(\w+)=(".*?"|[^;]*)')
+        matches = pattern.findall(pattern_str)
+
+        # 3. Build dict of key-value pairs
+        kwargs = {}
+        for key, value in matches:
+            value = value.strip()
+            # Remove surrounding quotes if present
+            if value.startswith('"') and value.endswith('"'):
+                value = value[1:-1]
+            # Try numeric conversion
+            if key in ("v", "version"):
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+            kwargs[key] = value
+
+        # 4. Construct object from parsed values
+        obj = cls(**{k: v for k, v in kwargs.items() if k in cls.__init__.__code__.co_varnames})
+        obj.version = kwargs.get("v", kwargs.get("version", 1.0))
+        return obj
+
+    # -------------------------------------------------------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Automatically convert only the constructor arguments (and version)
+        to a serializable dictionary.
+        """
+        sig = inspect.signature(self.__init__)
+        arg_names = [p.name for p in sig.parameters.values() if p.name != "self"]
+
+        data = {name: getattr(self, name) for name in arg_names if hasattr(self, name)}
+
+        data["version"] = getattr(self, "version", 1.0)
+        return data
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CleavagePattern":
+        """
+        Automatically construct an instance using only arguments
+        that exist in the constructor.
+        """
+        sig = inspect.signature(cls.__init__)
+        arg_names = [p.name for p in sig.parameters.values() if p.name != "self"]
+
+        init_kwargs = {k: v for k, v in data.items() if k in arg_names}
+        obj = cls(**init_kwargs)
+
+        if "version" in data:
+            obj.version = data["version"]
+
+        return obj
+
+    def exists(self, compound: Compound) -> bool:
+        """
+        Check if the cleavage pattern exists in a molecule.
         Returns:
             bool: True if pattern is found, False otherwise.
         """
         if self.reactant_query is None:
             return False
-        return mol.HasSubstructMatch(self.reactant_query)
-    
-    def fragment(self, mol: Chem.Mol) -> Tuple[Tuple[Chem.Mol]]:
-        """Apply the SMIRKS pattern and return fragments as SMILES."""
-        idx_to_map = {a.GetIdx(): a.GetAtomMapNum() for a in mol.GetAtoms()}
-        products = self.rxn.RunReactants((mol,))
-        expected_n_products = self.rxn.GetNumProductTemplates()
-        fragments = []
+        return compound.mol.HasSubstructMatch(self.reactant_query)
 
-        for prods in products:
-            frag_info = []
-            for p in prods:
-                for a in p.GetAtoms():
-                    if a.GetAtomMapNum() == 0 and a.HasProp("react_atom_idx"):
-                        parent_idx = int(a.GetProp("react_atom_idx"))
-                        if parent_idx in idx_to_map:
-                            a.SetAtomMapNum(idx_to_map[parent_idx])
-                smi = Chem.MolToSmiles(p, canonical=True)
-                frag_info.append(smi)
-            # frag_info = tuple(sorted(frag_info))
-            fragments.append(frag_info)
-        assert all(len(frag_set) == expected_n_products for frag_set in fragments), "Not all fragments match the expected number of products."
+    def is_applicable(self, compound: Compound) -> bool:
+        """
+        Check if this cleavage pattern should be applied to the given compound.
+        The decision is based on the compound's formal charge and charge_mode setting.
+        """
+        charge = compound.charge
+        for cm in self.charge_mode.split("|"):
+            if cm == "any":
+                return True
+            elif cm.startswith("positive"):
+                if charge == int(cm.replace("positive", "").strip()):
+                    return True
+            elif cm.startswith("negative"):
+                if charge == int(cm.replace("negative", "").strip()):
+                    return True
+            elif cm == "neutral":
+                if charge == 0:
+                    return True
+            else:
+                raise ValueError(f"Unsupported charge_mode: {cm}")
+        return False
 
-        frag_groups = tuple(
-            tuple(Chem.MolFromSmiles(smi) for smi in frag_set) 
-            for frag_set in fragments
+    # -------------------------------------------------------------------------
+    def fragment(self, compound: Compound) -> FragmentResult:
+        """
+        Apply the SMIRKS cleavage pattern and return mapped fragment information.
+
+        Returns:
+            FragmentResult: Contains the original molecule SMILES, 
+                            cleavage SMIRKS, and per-product fragment mapping.
+        """
+        if not self.exists(compound):
+            return None
+        
+        mol = compound._mol
+        # Mapping: atom_map_number → atom_idx in the original molecule
+        old_atom_map_to_idx = compound.atom_map_to_idx
+        # Mapping: atom_idx ↔ atom_map_number
+        idx_to_atom_map = bidict({a.GetIdx(): a.GetAtomMapNum() for a in mol.GetAtoms()})
+
+        # Apply the SMIRKS pattern to the molecule
+        product_sets = self.rxn.RunReactants((mol,))
+        # Identify all substructure matches corresponding to the reactant query
+        reactant_matches = list(mol.GetSubstructMatches(self.reactant_query))
+
+        fragment_products:List[FragmentProduct] = []
+
+        # Each product_set may contain multiple product molecules
+        for product_group in product_sets:
+            for product_mol in product_group:
+                frag_info = {
+                    'react': [-1] * len(self.react_idx_to_map),
+                    'prod': [-1] * len(self.prod_idx_to_map),
+                }
+                atom_mapping_cache = {}
+
+                # -----------------------------------------------------------------
+                # (1) Extract RDKit's atom-level correspondence from reaction result
+                for atom in product_mol.GetAtoms():
+                    if atom.HasProp("react_atom_idx") and atom.HasProp("old_mapno"):
+                        parent_idx = int(atom.GetProp("react_atom_idx"))
+                        old_mapno = int(atom.GetProp("old_mapno"))
+                        if parent_idx in idx_to_atom_map:
+                            atom_map = idx_to_atom_map[parent_idx]
+                            react_idx = self.react_idx_to_map.inverse[old_mapno]
+                            prod_idx = self.prod_idx_to_map.inverse[old_mapno]
+                            old_idx_in_canonical = old_atom_map_to_idx[atom_map]
+
+                            atom_mapping_cache[atom_map] = {
+                                'react_idx': react_idx,
+                                'prod_idx': prod_idx,
+                                'old_idx': old_idx_in_canonical
+                            }
+                            atom.SetAtomMapNum(idx_to_atom_map[parent_idx])
+
+                # -----------------------------------------------------------------
+                # (2) Build new compound and compute final index mapping
+                new_compound = Compound(product_mol)
+                if not self.is_applicable(new_compound):
+                    continue
+                new_atom_map_to_idx = new_compound.atom_map_to_idx
+                mapped_pairs = []
+
+                for atom_map, info in atom_mapping_cache.items():
+                    new_idx = new_atom_map_to_idx[atom_map]
+                    frag_info['react'][info['react_idx']] = info['old_idx']
+                    if info['prod_idx'] != -1:
+                        frag_info['prod'][info['prod_idx']] = new_idx
+                        mapped_pairs.append((info['react_idx'], idx_to_atom_map.inverse[atom_map]))
+
+                # -----------------------------------------------------------------
+                # (3) Fill remaining reactant indices by matching with substructure
+                for react_match in reactant_matches:
+                    if all(react_match[ridx] == aidx for ridx, aidx in mapped_pairs):
+                        for i, idx in enumerate(react_match):
+                            frag_info['react'][i] = old_atom_map_to_idx[idx_to_atom_map[idx]]
+                        reactant_matches.remove(react_match)
+                        break
+
+                # -----------------------------------------------------------------
+                # (4) Consistency check
+                assert all(idx != -1 for idx in frag_info['react']), \
+                    "Not all reactant indices were mapped."
+                assert all(idx != -1 for idx in frag_info['prod']), \
+                    "Not all product indices were mapped."
+
+                # -----------------------------------------------------------------
+                # (5) Append the result
+                fragment_products.append(
+                    FragmentProduct(
+                        smiles=new_compound.smiles,
+                        reactant_indices=tuple(frag_info['react']),
+                        product_indices=tuple(frag_info['prod'])
+                    )
+                )
+        fragment_result = FragmentResult(
+            cleavage=self.copy(),
+            reactant_smiles=compound.smiles,
+            products=tuple(fragment_products)
         )
-        return frag_groups
+        return fragment_result
+    
+    @classmethod
+    def format_product_mapping_str(
+        cls,
+        reactant_indices: Tuple[int, ...],
+        product_indices: Tuple[int, ...],
+        cleavage_pattern: 'CleavagePattern'
+    ) -> str:
+        """
+        Convert mapping and cleavage info into a single compact string.
+        Safely encodes indices with JSON and includes the cleavage pattern.
+        This string can later be parsed back with `parse_product_mapping_str`.
+        """
+        react_json = json.dumps(reactant_indices)
+        prod_json = json.dumps(product_indices)
+        cleavage_str = str(cleavage_pattern)
 
+        cleavage_json = json.dumps(cleavage_str)
 
-if __name__ == "__main__":
-    amide_pattern = CleavagePattern(
-        name="Amide bond cleavage",
-        # smirks="[C:1](=O)-[N:2]>>[C:1](=O)[*].[N:2][*]"
-        smirks="[C:1](=O)-[N:2]>>[C:1](=O)[*]"
-    )
+        return f"REACT_IDX={react_json};PROD_IDX={prod_json};CLEAVAGE={cleavage_json}"
 
-    mol = Chem.MolFromSmiles("CC(=O)NC")
-    print("Original:", Chem.MolToSmiles(mol))
+    # ----------------------------------------------------------------------
+    @classmethod
+    def parse_product_mapping_str(
+        cls,
+        mapping_str: str
+    ) -> Tuple[Tuple[int, ...], Tuple[int, ...], 'CleavagePattern']:
+        """
+        Parse a mapping string created by `format_product_mapping_str`
+        and recover the original components.
 
-    frags = amide_pattern.fragment(mol)
-    print("Fragments:", frags)
+        Returns:
+            dict with keys:
+                'reactant_indices' (Tuple[int, ...])
+                'product_indices' (Tuple[int, ...])
+                'cleavage_str' (str)
+        """
+        pattern = re.compile(
+            r'REACT_IDX=(\[.*?\]);PROD_IDX=(\[.*?\]);CLEAVAGE=(".*"|[^;]*)'
+        )
+        m = pattern.fullmatch(mapping_str.strip())
+        if not m:
+            raise ValueError(f"Invalid mapping string format: {mapping_str}")
+
+        react_json, prod_json, cleavage_json = m.groups()
+        try:
+            react_idx = tuple(json.loads(react_json))
+            prod_idx = tuple(json.loads(prod_json))
+            cleavage_str = json.loads(cleavage_json)
+            cleavage_pattern = cls.parse(cleavage_str)
+        except json.JSONDecodeError:
+            raise ValueError("Failed to decode JSON fields in mapping string.")
+
+        return react_idx, prod_idx, cleavage_pattern
+

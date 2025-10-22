@@ -62,6 +62,16 @@ class Compound:
         return Chem.MolToSmiles(self._mol, canonical=True)
     
     @property
+    def _smiles_with_atom_idx(self) -> str:
+        """
+        Get the SMILES with atom indices as atom map numbers.
+        """
+        mol = Chem.MolFromSmiles(self.smiles)
+        for atom in mol.GetAtoms():
+            atom.SetAtomMapNum(atom.GetIdx())  # Atom indices start from 0, so add 1
+        return Chem.MolToSmiles(mol)
+    
+    @property
     def formula(self) -> Formula:
         """
         Get the molecular formula of the compound.

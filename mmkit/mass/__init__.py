@@ -1,10 +1,10 @@
 from .Adduct import Adduct
-from .AdductIon import AdductIon
+from .AdductedCompound import AdductedCompound
 from .Tolerance import MassTolerance, DaTolerance, PpmTolerance
 
 __all__ = [
     "Adduct",
-    "AdductIon",
+    "AdductedCompound",
     "MassTolerance",
     "DaTolerance",
     "PpmTolerance",

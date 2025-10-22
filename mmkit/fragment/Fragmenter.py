@@ -1,98 +1,81 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import time
 from rdkit import Chem
+import json
+from pathlib import Path
 
 from .CleavagePattern import CleavagePattern
-from .cleavage_patterns import patterns as default_cleavage_patterns
+from .CleavagePatternLibrary import CleavagePatternLibrary
 from .FragmentTree import FragmentTree, FragmentNode, FragmentEdge
-from ..mass.constants import AdductType
-from ..chem.Compound import Compound
-from ..mass.Adduct import Adduct
-from ..mass.AdductIon import AdductIon
-from ..fragment.Frag import Frag
-from ..fragment.BondPosition import BondPosition
+from ..mass.constants import AdductType, IonMode
+from ..chem.Compound import Compound, Formula
+from .FragmentResult import FragmentResult
 
 class Fragmenter:
-    _SUPPORTED_ADDUCT_TYPES = [AdductType.M_PLUS_H_POS]
     def __init__(
             self,
-            adduct_type: Tuple[AdductType],
             max_depth: int,
-            cleavage_patterns: Tuple[CleavagePattern] = None
+            cleavage_pattern_lib: CleavagePatternLibrary,
             ):
-        assert all(isinstance(at, AdductType) for at in adduct_type), "adduct_type must be a tuple of AdductType"
-        assert all((at in self._SUPPORTED_ADDUCT_TYPES) for at in adduct_type), "Currently only AdductType.M_PLUS_H_POS is supported"
-
-        self.adduct_type = adduct_type
         self.max_depth = max_depth
-        self.patterns = cleavage_patterns if cleavage_patterns is not None else default_cleavage_patterns
+        self.cleavage_pattern_lib = cleavage_pattern_lib
 
-    def cleave_compound(self, compound: Compound, adduct_type: AdductType) -> Dict[str, Tuple['FragmentInfo']]:
+    def to_dict(self) -> Dict[str, str]:
         """
-        Cleave the compound using the defined cleavage patterns.
-
-        Parameters:
-            compound (Compound): The input compound to be cleaved.
-
-        Returns:
-            List[Compound]: A list of resulting fragments as Compound objects.
+        Convert this Fragmenter instance into a serializable dictionary.
         """
-        fragments = defaultdict(list)
-        for pattern in self.patterns:
-            if not pattern.exists(compound._mol):
-                continue
+        return {
+            "max_depth": self.max_depth,
+            "cleavage_pattern_lib": self.cleavage_pattern_lib.to_dict(),
+        }
 
-            frag_groups = pattern.fragment(compound._mol)
-            for frag_group in frag_groups:
-                for frag_idx, mol in enumerate(frag_group):
-                    frag_c = Compound(mol)
-                    frag = Frag(frag_c, adduct_type=adduct_type)
-
-                    # Identify bond positions (dummy atoms) in the fragment
-                    bond_poses = []
-                    for atom in mol.GetAtoms():
-                        if atom.GetAtomicNum() == 0:
-                            neighbors = [nei.GetAtomMapNum() for nei in atom.GetNeighbors()]
-                            if len(neighbors) != 1:
-                                raise ValueError("Unexpected number of neighbors for dummy atom.")
-                            neighbor_map_num = neighbors[0]
-                            bond_poses.append(neighbor_map_num)
-                    bond_poses = tuple(sorted(bond_poses))
-
-                    for recon_c, adducts in frag._candidates.items():
-                        for adduct in adducts:
-                            fragment_info = FragmentInfo(
-                                smiles=recon_c._smiles,
-                                adduct=adduct,
-                                parent_smiles=compound._smiles,
-                                bond_positions=bond_poses,
-                                cleavage_pattern=(pattern.smirks, frag_idx)
-                            )
-                            fragments[recon_c.smiles].append(fragment_info)
-
-        # Remove duplicate fragments
-        unique_fragments = {}
-        for smi, frag_list in fragments.items():
-            unique_fragments[smi] = tuple(set(frag_list))
-            
-        return unique_fragments
-
-    def create_fragment_tree(self, compound: Compound, timeout_seconds: float = float('inf')) -> FragmentTree:
-        """`
-        Create a fragment tree from the compound.
-
-        Parameters:
-            compound (Compound): The input compound.
-            timeout_seconds (float): The maximum time allowed for processing. If None, no timeout is applied.
-
-        Raises:
-            TimeoutError: Raised if the processing time exceeds the specified timeout.
-
-        Returns:
-            FragmentTree: The resulting fragment tree.
+    @classmethod
+    def from_dict(cls, data: Dict[str, str]) -> "Fragmenter":
         """
+        Reconstruct a Fragmenter instance from a dictionary.
+        """
+        max_depth = int(data.get("max_depth", 1))
+        cleavage_pattern_lib = CleavagePatternLibrary.from_dict(
+            data.get("cleavage_pattern_lib", {})
+        )
+        return cls(max_depth=max_depth, cleavage_pattern_lib=cleavage_pattern_lib)
+
+    def save_json(self, path: str):
+        """Save the library to a JSON file."""
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def load_json(cls, path: str) -> "Fragmenter":
+        """Load a library from a JSON file."""
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.from_dict(data)
+
+    def cleave_compound(self, compound: Compound) -> Tuple[FragmentResult]:
+        fragment_group = []
+        for pattern in self.cleavage_pattern_lib.patterns:
+            fragment_result = pattern.fragment(compound)
+            if fragment_result is not None:
+                fragment_group.append(fragment_result)
+
+        return tuple(fragment_group)
+
+    def create_fragment_tree(
+            self, 
+            compound: Compound, 
+            ion_mode: IonMode,
+            timeout_seconds: float = float('inf')
+            ) -> FragmentTree:
+        
+        if ion_mode == IonMode.POSITIVE:
+            pass
+        else:
+            raise NotImplementedError("Only positive ion mode is currently supported.")
+                        
         start_time = time.time()
 
         def check_timeout():
@@ -103,94 +86,91 @@ class Fragmenter:
         edges: List[FragmentEdge] = []
         smi_to_node_id: Dict[str, int] = {}
         node_id_pair_to_edge_id: Dict[Tuple[int, int], int] = {}
+        processed_node_ids = set()
 
-        def add_node(compound: Compound, adducts: Tuple[Adduct]) -> int:
-            smi = compound.smiles
-            adduct_strs = tuple(str(adduct) for adduct in adducts)
-            if smi in smi_to_node_id:
-                node_id = smi_to_node_id[smi]
-                adduct_strs = tuple(set(nodes[node_id].adducts).union(set(adduct_strs)))
-                nodes[node_id].adducts = adduct_strs
+
+        def get_set_node_idx(smiles:str) -> int:
+            if smiles in smi_to_node_id:
+                return smi_to_node_id[smiles]
             else:
-                node_id = len(nodes)
-                nodes.append(FragmentNode(smi, adduct_strs))
-                smi_to_node_id[smi] = node_id
-            return node_id
+                node_idx = len(nodes)
+                nodes.append(FragmentNode(node_idx, smiles))
+                smi_to_node_id[smiles] = node_idx
+            return node_idx
         
-        def add_edges(edge: FragmentEdge):
-            key = (edge.source_id, edge.target_id)
-            if key in node_id_pair_to_edge_id:
-                old_edge_id = node_id_pair_to_edge_id[key]
-                old_edge = edges[old_edge_id]
-                old_edge.cleavage_records = tuple(set(old_edge.cleavage_records).union(set(edge.cleavage_records)))
-                old_edge.attribute.update(edge.attribute)
-                edges[old_edge_id] = old_edge
-                edge = old_edge
-                edge_id = old_edge_id
+        def get_set_edge_idx(
+                source_node_idx:int,
+                target_node_idx:int,
+                product_mapping_str:str,
+                ) -> int:
+            edge_key = (source_node_idx, target_node_idx)
+            if edge_key in node_id_pair_to_edge_id:
+                edge_idx = node_id_pair_to_edge_id[edge_key]
+                if product_mapping_str not in edges[edge_idx].cleavage_records:
+                    edges[edge_idx].cleavage_records += (product_mapping_str,)
+                return edge_idx
             else:
-                edge_id = len(edges)
-                edges.append(edge)
-                node_id_pair_to_edge_id[key] = edge_id
+                edge_idx = len(edges)
+                edges.append(
+                    FragmentEdge(
+                        source_node_idx,
+                        target_node_idx,
+                        (product_mapping_str,)
+                    )
+                )
+                node_id_pair_to_edge_id[edge_key] = edge_idx
+            return edge_idx
+
+        def add_data(
+                source_smiles:str,
+                target_smiles:str,
+                product_mapping_str:str
+                ) -> Tuple[int, int, int]:
+            src_node_idx = get_set_node_idx(source_smiles)
+            tgt_node_idx = get_set_node_idx(target_smiles)
+
+            edge_idx = get_set_edge_idx(
+                src_node_idx,
+                tgt_node_idx,
+                product_mapping_str
+            )
+            return src_node_idx, tgt_node_idx, edge_idx
             
-            return edge_id
-
-        for adduct_type in self.adduct_type:
-            if adduct_type == AdductType.M_PLUS_H_POS:
-                precursor = Frag(compound, adduct_type=adduct_type)
-            else:
-                raise NotImplementedError(f"Adduct type {adduct_type} not implemented.")
             
-            next_node_ids = []
-            processed_node_ids = set()
+        root_compound = compound.copy()
+        node_idx = get_set_node_idx(root_compound.smiles)
 
-            for c, adducts in precursor._candidates.items():
-                next_node_id = add_node(c, adducts)
-                next_node_ids.append(next_node_id)
+        next_node_ids = [node_idx]
+        for depth in range(1, self.max_depth + 1):
+            if len(next_node_ids) == 0:
+                break
+            check_timeout()
 
-
-            for depth in range(1, self.max_depth + 1):
-                if len(next_node_ids) == 0:
-                    break
-
-                check_timeout()
-                new_node_ids = []
-                new_infoes: Dict[str, Tuple[FragmentInfo]] = defaultdict(list)
-                for node_id in next_node_ids:
-                    fragment_node: FragmentNode = nodes[node_id]
-                    frag_groups = self.cleave_compound(Compound(Chem.MolFromSmiles(fragment_node.smiles)), adduct_type=adduct_type)
-                    for smi, frag_infoes in frag_groups.items():
-                        new_infoes[smi].extend(frag_infoes)
-                    processed_node_ids.add(node_id)
-
-                for smi, frag_infoes in new_infoes.items():
-                    check_timeout()
-                    c = Compound.from_smiles(smi)
-                    adducts = tuple(frag_info.adduct for frag_info in frag_infoes)
-                    new_node_id = add_node(c, adducts)
-                    if new_node_id not in processed_node_ids:
-                        new_node_ids.append(new_node_id)
-
-                    for frag_info in frag_infoes:
-                        source_c = Compound.from_smiles(frag_info.parent_smiles)
-                        _atom_map_to_idx = source_c.atom_map_to_idx
-                        bond_pos_idx = tuple(sorted(_atom_map_to_idx[bond_pos] for bond_pos in frag_info.bond_positions))
-                        source_id = smi_to_node_id[source_c.smiles]
-
-                        cleavage_record = (frag_info.cleavage_pattern[0], frag_info.cleavage_pattern[1], bond_pos_idx)
-                        edge = FragmentEdge(
-                            source_id=source_id,
-                            target_id=new_node_id,
-                            cleavage_records=(cleavage_record,),
+            new_node_ids = set()
+            for node_idx in next_node_ids:
+                source_smiles = nodes[node_idx].smiles
+                compound = Compound.from_smiles(source_smiles)
+                frag_group = self.cleave_compound(compound)
+                for frag_result in frag_group:
+                    for frag_product in frag_result.products:
+                        target_smiles = frag_product.smiles
+                        product_mapping_str = CleavagePattern.format_product_mapping_str(
+                            reactant_indices=frag_product.reactant_indices,
+                            product_indices=frag_product.product_indices,
+                            cleavage_pattern=frag_result.cleavage,
                         )
-                        add_edges(edge)
-
-                next_node_ids = list(new_node_ids)
-                # print(f"Depth {depth} completed. New nodes: {len(new_node_ids)}")
-                # print(f"Total nodes so far: {len(nodes)}")
-                # print(f"Total edges so far: {len(edges)}")
-                # print()
+                        # product_mapping = CleavagePattern.parse_product_mapping_str(product_mapping_str)
+                        src_node_idx, tgt_node_idx, edge_idx = add_data(
+                            source_smiles,
+                            target_smiles,
+                            product_mapping_str
+                        )
+                        new_node_ids.add(tgt_node_idx)
+                processed_node_ids.add(node_idx)
+            next_node_ids = new_node_ids - processed_node_ids
+                
         
-        fragment_tree = FragmentTree(compound=compound, nodes=nodes, edges=edges)
+        fragment_tree = FragmentTree(compound=root_compound, nodes=nodes, edges=edges)
         return fragment_tree
                 
     def copy(self) -> 'Fragmenter':
@@ -201,27 +181,7 @@ class Fragmenter:
             Fragmenter: A new instance with the same adduct_types and max_depth.
         """
         return Fragmenter(
-            adduct_type=tuple(self.adduct_type),
             max_depth=self.max_depth,
-            cleavage_patterns=tuple(self.patterns)
+            cleavage_pattern_lib=self.cleavage_pattern_lib,
         )
 
-
-@dataclass(frozen=True)
-class FragmentInfo:
-    smiles: str
-    adduct: Adduct
-    parent_smiles: str
-    bond_positions: Tuple[int]
-    cleavage_pattern: Tuple[str, int]  # (smirks, fragment_index)
-
-    def __hash__(self):
-        return hash((self.adduct, self.parent_smiles, self.bond_positions, self.cleavage_pattern))
-
-    def __eq__(self, other):
-        if not isinstance(other, FragmentInfo):
-            return False
-        return (self.adduct == other.adduct and
-                self.parent_smiles == other.parent_smiles and
-                self.bond_positions == other.bond_positions and
-                self.cleavage_pattern == other.cleavage_pattern)

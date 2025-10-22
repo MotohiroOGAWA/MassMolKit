@@ -1,0 +1,31 @@
+{
+  "library_name": "positive_default",
+  "version": 1.0,
+  "patterns": [
+    {
+      "smirks": "[C:1]-!@[!#1:2]>>[C+:1][*:2]",
+      "name": "",
+      "charge_mode": "positive1",
+      "version": 1.0
+    },
+    {
+      "smirks": "[C:1]-!@[!#1:2]>>[C:1][*:2]",
+      "name": "",
+      "charge_mode": "positive1",
+      "version": 1.0
+    },
+    {
+      "smirks": "[O:1]-!@[!#1:2]>>[O:1][*:2]",
+      "name": "",
+      "charge_mode": "neutral",
+      "version": 1.0
+    },
+    {
+      "smirks": "[N:1]-!@[!#1:2]>>[N:1][*:2]",
+      "name": "",
+      "charge_mode": "neutral",
+      "version": 1.0
+    }
+  ]
+}
+  

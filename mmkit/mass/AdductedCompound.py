@@ -9,7 +9,7 @@ from ..chem.Compound import Compound
 from rdkit import RDLogger
 RDLogger.DisableLog('rdApp.warning')
 
-class AdductIon:
+class AdductedCompound:
     DELIM = "|"
     def __init__(self, compound: Compound, adduct: Adduct):
         self.compound = compound
@@ -18,7 +18,7 @@ class AdductIon:
         pass
 
     def __repr__(self):
-        return f"AdductIon({self.compound.smiles}{self.DELIM}{self.adduct})"
+        return f"AdductedCompound({self.compound.smiles}{self.DELIM}{self.adduct})"
     
     def __str__(self) -> str:
         """
@@ -29,22 +29,19 @@ class AdductIon:
     
 
     @classmethod
-    def parse(cls, text: str) -> "AdductIon":
+    def parse(cls, text: str) -> "AdductedCompound":
         """
-        Parse string created by __str__ into an AdductIon.
+        Parse string created by __str__ into an AdductedCompound.
         Example input: "C6H12O6|[M+H]+"
         """
-        from ..chem.Compound import Compound
-        from .Adduct import Adduct
-
         if cls.DELIM not in text:
             raise ValueError(f"Missing delimiter '{cls.DELIM}' in: {text}")
 
         smiles, adduct_str = text.split(cls.DELIM, 1)
 
         # construct Compound and Adduct
-        compound = Compound.from_smiles(smiles)  # factory: handles SMILES or Formula
-        adduct = Adduct.parse(adduct_str)
+        compound = Compound.from_smiles(smiles.strip())  # factory: handles SMILES or Formula
+        adduct = Adduct.parse(adduct_str.strip())
 
         return cls(compound, adduct)
     
@@ -53,8 +50,7 @@ class AdductIon:
         """
         Get the molecular formula of the fragment with the adduct applied.
         """
-        formula = self.compound.formula.copy()
-        formula = formula + self.adduct.formula_shift
+        formula = self.adduct.calc_formula(self.compound.formula)
         formula._charge = self.adduct.charge
         return formula
 

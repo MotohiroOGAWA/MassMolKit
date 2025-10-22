@@ -9,7 +9,14 @@ lg.setLevel(RDLogger.CRITICAL)  # Only show critical errors, suppress warnings a
 class IonMode(Enum):
     POSITIVE = "positive"
     NEGATIVE = "negative"
-
+def parse_ion_mode(mode_str: str) -> IonMode:
+    mode_str = mode_str.strip().lower()
+    if mode_str in ["positive", "pos", "+", "p"]:
+        return IonMode.POSITIVE
+    elif mode_str in ["negative", "neg", "-", "n"]:
+        return IonMode.NEGATIVE
+    else:
+        raise ValueError(f"Unknown ion mode string: {mode_str}")
 
 class AdductType(Enum):
     NONE = "None"
