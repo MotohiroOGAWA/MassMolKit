@@ -12,6 +12,7 @@ from .FragmentTree import FragmentTree, FragmentNode, FragmentEdge
 from ..mass.constants import AdductType, IonMode
 from ..chem.Compound import Compound, Formula
 from .FragmentResult import FragmentResult
+from .FragmentPathway import FragmentStep
 
 class Fragmenter:
     def __init__(
@@ -106,7 +107,7 @@ class Fragmenter:
         def get_set_edge_idx(
                 source_node_idx:int,
                 target_node_idx:int,
-                product_mapping_str:str,
+                fragment_step_str:str,
                 depth:int,
                 ) -> int:
             edge_key = (source_node_idx, target_node_idx)
@@ -114,13 +115,13 @@ class Fragmenter:
                 return -1
             
             if edge_key in edges:
-                edges[edge_key].try_add_cleavage_record(product_mapping_str)
+                edges[edge_key].try_add_fragment_step(fragment_step_str)
                 return edge_key
             else:
                 edges[edge_key] = FragmentEdge(
                     source_node_idx,
                     target_node_idx,
-                    (product_mapping_str,)
+                    (fragment_step_str,)
                 )
             nodes[source_node_idx].add_child(target_node_idx)
             nodes[target_node_idx].add_parent(source_node_idx)
@@ -130,7 +131,7 @@ class Fragmenter:
         def add_data(
                 source_smiles:str,
                 target_smiles:str,
-                product_mapping_str:str,
+                fragment_step_str:str,
                 depth:int,
                 ) -> Tuple[int, int, int]:
             src_node_idx = get_set_node_idx(source_smiles, depth=depth)
@@ -139,7 +140,7 @@ class Fragmenter:
             edge_idx = get_set_edge_idx(
                 src_node_idx,
                 tgt_node_idx,
-                product_mapping_str,
+                fragment_step_str,
                 depth=depth,
             )
             return src_node_idx, tgt_node_idx, edge_idx
@@ -162,16 +163,17 @@ class Fragmenter:
                 for frag_result in frag_group:
                     for frag_product in frag_result.products:
                         target_smiles = frag_product.smiles
-                        product_mapping_str = CleavagePattern.format_product_mapping_str(
-                            reactant_indices=frag_product.reactant_indices,
-                            product_indices=frag_product.product_indices,
+                        fragment_step = FragmentStep(
                             cleavage_pattern=frag_result.cleavage,
+                            react_indices=frag_product.reactant_indices,
+                            prod_indices=frag_product.product_indices,
                         )
+                        fragment_step_str = str(fragment_step)
                         # product_mapping = CleavagePattern.parse_product_mapping_str(product_mapping_str)
                         src_node_idx, tgt_node_idx, edge_idx = add_data(
                             source_smiles,
                             target_smiles,
-                            product_mapping_str,
+                            fragment_step_str,
                             depth=depth,
                         )
                         new_node_ids.add(tgt_node_idx)

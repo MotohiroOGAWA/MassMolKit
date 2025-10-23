@@ -15,6 +15,7 @@ from mmkit.mass.constants import AdductType, IonMode, parse_ion_mode
 from mmkit.fragment.FragmentTree import FragmentTree, FragmentNode, FragmentEdge
 from mmkit.fragment.AdductedFragmentTree import AdductedFragmentTree
 from mmkit.mass.Tolerance import PpmTolerance, DaTolerance
+from mmkit.fragment.FragmentPathway import *
 
 
 class TestFragmentTree(unittest.TestCase):
@@ -104,49 +105,18 @@ class TestFragmentTree(unittest.TestCase):
             
             edge_str = fragment_tree.edges[(0,2)].__str__()
             edge = FragmentEdge.parse(edge_str)
-            react_idx, prod_idx, cleavage_pattern = CleavagePattern.parse_product_mapping_str(edge.cleavage_records[0])
+            fragment_step = FragmentStep.parse(edge.fragment_step_strs[0])
 
             adducted_tree = AdductedFragmentTree(fragment_tree)
-            all_formulas_with_node_id = adducted_tree.get_all_formulas_with_node_id(AdductType.M_PLUS_H_POS)
 
-            assigned_peaks = assign_formulas_to_peaks(
+            fragment_pathways: List[FragmentPathway] = []
+            fragment_pathways = FragmentPathway.build_pathways_by_peak(
+                adducted_tree=adducted_tree,
+                adduct_type=AdductType.M_PLUS_H_POS,
                 peaks_mz=[p[0] for p in peaks],
-                formula_candidates=[v[0] for v in all_formulas_with_node_id.values()],
                 mass_tolerance=PpmTolerance(10),
             )
-
-            def collect_path_to_root(tree: AdductedFragmentTree, node_id: int) -> List[str]:
-                """
-                Recursively collect str(node) and str(edge) from the given node up to the root.
-                Returns a list ordered from root → current node.
-                """
-                node = tree.nodes[node_id]
-
-                # Check if the node is the root (no parents)
-                if not node.parent_ids:
-                    return [node.smiles]
-
-                # Select the first parent (if multiple parents exist, take the first one)
-                parent_id = node.parent_ids[0]
-                edge = tree.edges[(parent_id, node_id)]
-
-                # Recursively move upward to the parent node
-                path = collect_path_to_root(tree, parent_id)
-
-                # Append the edge and current node in order
-                path.append(str(edge))
-                path.append(node.smiles)
-                return path
-
-            pathes = []
-            for i, info in enumerate(assigned_peaks):
-                if info['n_matches'] > 0:
-                    for formula_str, mass_error in zip(info['matched_formulas'], info['mass_errors']):
-                        formula = Formula.parse(formula_str)
-                        formula_with_node_id = all_formulas_with_node_id[formula_str]
-                        for node_id in formula_with_node_id[1]:
-                            path = collect_path_to_root(adducted_tree, node_id)
-                            pathes.append((i, formula_str, mass_error, path))
-
-            pattern = CleavagePattern.parse_product_mapping_str(FragmentEdge.parse(pathes[0][3][1]).cleavage_records[0])[2]            
+            fragment_pathway_peak4_0 = fragment_pathways[4][0]
+            fragment_pathway_peak4_0_str = str(fragment_pathway_peak4_0)
+            fragment_pathway_peak4_0_parsed = FragmentPathway.parse(fragment_pathway_peak4_0_str)
             pass

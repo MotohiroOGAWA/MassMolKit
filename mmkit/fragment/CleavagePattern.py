@@ -242,6 +242,16 @@ class CleavagePattern:
         if self.reactant_query is None:
             return False
         return compound.mol.HasSubstructMatch(self.reactant_query)
+    
+    def matches(self, compound: Compound) -> List[Tuple[int, ...]]:
+        """
+        Get all substructure matches of the cleavage pattern in a molecule.
+        Returns:
+            List[Tuple[int, ...]]: List of atom index tuples for each match.
+        """
+        if self.reactant_query is None:
+            return []
+        return compound.mol.GetSubstructMatches(self.reactant_query)
 
     def is_applicable(self, compound: Compound) -> bool:
         """
@@ -359,57 +369,3 @@ class CleavagePattern:
         )
         return fragment_result
     
-    @classmethod
-    def format_product_mapping_str(
-        cls,
-        reactant_indices: Tuple[int, ...],
-        product_indices: Tuple[int, ...],
-        cleavage_pattern: 'CleavagePattern'
-    ) -> str:
-        """
-        Convert mapping and cleavage info into a single compact string.
-        Safely encodes indices with JSON and includes the cleavage pattern.
-        This string can later be parsed back with `parse_product_mapping_str`.
-        """
-        react_json = json.dumps(reactant_indices)
-        prod_json = json.dumps(product_indices)
-        cleavage_str = str(cleavage_pattern)
-
-        cleavage_json = json.dumps(cleavage_str)
-
-        return f"REACT_IDX={react_json};PROD_IDX={prod_json};CLEAVAGE={cleavage_json}"
-
-    # ----------------------------------------------------------------------
-    @classmethod
-    def parse_product_mapping_str(
-        cls,
-        mapping_str: str
-    ) -> Tuple[Tuple[int, ...], Tuple[int, ...], 'CleavagePattern']:
-        """
-        Parse a mapping string created by `format_product_mapping_str`
-        and recover the original components.
-
-        Returns:
-            dict with keys:
-                'reactant_indices' (Tuple[int, ...])
-                'product_indices' (Tuple[int, ...])
-                'cleavage_str' (str)
-        """
-        pattern = re.compile(
-            r'REACT_IDX=(\[.*?\]);PROD_IDX=(\[.*?\]);CLEAVAGE=(".*"|[^;]*)'
-        )
-        m = pattern.fullmatch(mapping_str.strip())
-        if not m:
-            raise ValueError(f"Invalid mapping string format: {mapping_str}")
-
-        react_json, prod_json, cleavage_json = m.groups()
-        try:
-            react_idx = tuple(json.loads(react_json))
-            prod_idx = tuple(json.loads(prod_json))
-            cleavage_str = json.loads(cleavage_json)
-            cleavage_pattern = cls.parse(cleavage_str)
-        except json.JSONDecodeError:
-            raise ValueError("Failed to decode JSON fields in mapping string.")
-
-        return react_idx, prod_idx, cleavage_pattern
-

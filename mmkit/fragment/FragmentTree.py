@@ -175,11 +175,11 @@ class FragmentEdge:
         self,
         source_id: int,
         target_id: int,
-        cleavage_records: Tuple[str],
+        fragment_step_strs: Tuple[str],
     ):
         self.source_id = source_id
         self.target_id = target_id
-        self.cleavage_records = tuple(sorted(cleavage_records))
+        self.fragment_step_strs = tuple(sorted(fragment_step_strs))
 
     def __eq__(self, other):
         if not isinstance(other, FragmentEdge):
@@ -187,32 +187,32 @@ class FragmentEdge:
         return (
             self.source_id == other.source_id and
             self.target_id == other.target_id and
-            self.cleavage_records == other.cleavage_records
+            self.fragment_step_strs == other.fragment_step_strs
         )
 
     def __hash__(self):
         return hash((
             self.source_id,
             self.target_id,
-            frozenset(self.cleavage_records)
+            frozenset(self.fragment_step_strs)
         ))
 
     def __repr__(self):
         return (
             f"FragmentEdge({self.source_id} -> {self.target_id}, "
-            f"cleavage_records={self.cleavage_records})"
+            f"fragment_steps={self.fragment_step_strs})"
         )
     
     def __str__(self):
-        cleavages_json = json.dumps(self.cleavage_records, ensure_ascii=False)
-        return f"(src={self.source_id}; tgt={self.target_id}; cleavages={cleavages_json})"
+        fragment_steps_json = json.dumps(self.fragment_step_strs, ensure_ascii=False)
+        return f"(src={self.source_id}; tgt={self.target_id}; fragment_steps={fragment_steps_json})"
 
     @staticmethod
     def parse(text: str) -> "FragmentEdge":
         """
         Parse a string created by __str__() back into a FragmentEdge.
         Expected format:
-            (src=0; tgt=1; cleavages=["C1-C2","C3-O4"])
+            (src=0; tgt=1; fragment_steps=["C1-C2","C3-O4"])
         """
         text = text.strip()
         if text.startswith("(") and text.endswith(")"):
@@ -221,21 +221,21 @@ class FragmentEdge:
         # --- source id ---
         m_src = re.search(r"src=(\d+)", text)
         m_tgt = re.search(r"tgt=(\d+)", text)
-        m_clv = re.search(r"cleavages=(\[.*\])", text)
+        m_clv = re.search(r"fragment_steps=(\[.*\])", text)
 
         if not (m_src and m_tgt and m_clv):
             raise ValueError(f"Invalid FragmentEdge string: {text}")
 
         source_id = int(m_src.group(1))
         target_id = int(m_tgt.group(1))
-        cleavages_json = m_clv.group(1)
+        fragment_steps_json = m_clv.group(1)
 
         try:
-            cleavage_records = tuple(json.loads(cleavages_json))
+            fragment_step_strs = tuple(json.loads(fragment_steps_json))
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse cleavage_records: {e} → {cleavages_json}")
+            raise ValueError(f"Failed to parse fragment_steps: {e} → {fragment_steps_json}")
 
-        return FragmentEdge(source_id, target_id, cleavage_records)
+        return FragmentEdge(source_id, target_id, fragment_step_strs)
 
     def copy(self) -> 'FragmentEdge':
         """
@@ -244,18 +244,14 @@ class FragmentEdge:
         return FragmentEdge(
             source_id=self.source_id,
             target_id=self.target_id,
-            cleavage_records=tuple(self.cleavage_records)
+            fragment_step_strs=tuple(self.fragment_step_strs)
         )
     
-    def try_add_cleavage_record(self, record: str) -> bool:
-        """
-        Try to add a cleavage record to the edge.
-        Returns True if added, False if already present.
-        """
-        if record in self.cleavage_records:
+    def try_add_fragment_step(self, fragment_step_str: str) -> bool:
+        if fragment_step_str in self.fragment_step_strs:
             return False
         else:
-            self.cleavage_records = tuple(sorted(self.cleavage_records + (record,)))
+            self.fragment_step_strs = tuple(sorted(self.fragment_step_strs + (fragment_step_str,)))
             return True
     
     @staticmethod
@@ -263,11 +259,11 @@ class FragmentEdge:
         """
         Return the header for the TSV representation of FragmentEdge.
         """
-        return f"Source\tTarget\tCleavages\n"
+        return f"Source\tTarget\tFragmentSteps\n"
 
     def to_tsv(self) -> str:
         """
         Convert the FragmentEdge to a TSV string.
         """
-        return f"{self.source_id}\t{self.target_id}\t{str(self.cleavage_records)}\n"
+        return f"{self.source_id}\t{self.target_id}\t{str(self.fragment_step_strs)}\n"
 
