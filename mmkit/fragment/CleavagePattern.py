@@ -84,7 +84,25 @@ class CleavagePattern:
                 fields.append(f"{name}={value_str}")
 
         return f"{self.__class__.__name__};" + ";".join(fields)
-    
+
+    @property
+    def num_reactant_atoms(self) -> int:
+        """
+        Get the number of atoms in the reactant template.
+        Returns:
+            int: Number of atoms in the reactant.
+        """
+        return len(self.react_idx_to_map)
+
+    @property
+    def num_product_atoms(self) -> int:
+        """
+        Get the number of atoms in the product template.
+        Returns:
+            int: Number of atoms in the product.
+        """
+        return len(self.prod_idx_to_map)
+
     def copy(self) -> 'CleavagePattern':
         """
         Create a copy of this CleavagePattern instance.
