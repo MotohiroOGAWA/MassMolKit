@@ -18,7 +18,6 @@ from mmkit.mass.Tolerance import PpmTolerance, DaTolerance
 
 
 class TestFragmentTree(unittest.TestCase):
-
     def setUp(self):
         """Prepare common test molecules"""
         self.temp_files = []  # Register the temporary file for cleanup

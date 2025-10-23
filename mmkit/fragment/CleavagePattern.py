@@ -32,7 +32,7 @@ class CleavagePattern:
         charge_modes = [cm.strip().lower() for cm in charge_mode.split("|")]
         assert all(cm in self.SUPPORTED_CHARGE_MODES for cm in charge_modes), \
             f"Unsupported charge_mode: {charge_mode}"
-        self.charge_mode = "|".join(sorted(charge_modes))
+        self.charge_mode = "|".join(set(charge_modes))
         self.rxn = rdChemReactions.ReactionFromSmarts(smirks)
 
         # Extract the reactant SMARTS part to use for substructure matching
@@ -69,6 +69,52 @@ class CleavagePattern:
     def __repr__(self):
         return f"{self.__class__.__name__}(name='{self.name}', smirks='{self.smirks}')"
     
+    def key(self, include_name: bool = False) -> Tuple:
+        """
+        Generate a unique key for hashing or equality checks.
+
+        Args:
+            include_name (bool): Whether to include the name field in comparison.
+
+        Returns:
+            tuple: Key representing the essential identity of the pattern.
+        """
+        if include_name:
+            return (self.smirks, self.charge_mode, self.name)
+        return (self.smirks, self.charge_mode)
+
+    def __eq__(self, other: 'CleavagePattern') -> bool:
+        """
+        Default equality check for CleavagePattern objects.
+        Compares SMIRKS and charge_mode by default (ignores name).
+
+        To include name, call self.equals(other, include_name=True).
+        """
+        if not isinstance(other, CleavagePattern):
+            return False
+        return self.key(False) == other.key(False)
+    
+    def __hash__(self) -> int:
+        """
+        Default hash based on key excluding name.
+        """
+        return hash(self.key(False))
+
+    def equals(self, other: 'CleavagePattern', include_name: bool = False) -> bool:
+        """
+        Extended equality check with optional name inclusion.
+
+        Args:
+            other (CleavagePattern): Another pattern to compare.
+            include_name (bool): If True, also compare name.
+
+        Returns:
+            bool: True if equivalent under the given criteria.
+        """
+        if not isinstance(other, CleavagePattern):
+            return False
+        return self.key(include_name) == other.key(include_name)
+
     def __str__(self):
         sig = inspect.signature(self.__init__)
         arg_names = [p.name for p in sig.parameters.values() if p.name != "self"]
