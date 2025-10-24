@@ -287,7 +287,7 @@ class CleavagePattern:
         if not self.exists(compound):
             return None
         
-        mol = compound._mol
+        mol = Chem.Mol(compound._mol)
         # Mapping: atom_map_number → atom_idx in the original molecule
         old_atom_map_to_idx = compound.atom_map_to_idx
         # Mapping: atom_idx ↔ atom_map_number
@@ -369,3 +369,116 @@ class CleavagePattern:
         )
         return fragment_result
     
+    def fragment_at_atom_idx(self, compound: Compound, target_indices: Tuple[int]) -> FragmentResult:
+        """
+        Apply this cleavage pattern (SMIRKS) but restrict the reaction
+        to specific atom indices (target_indices) within the molecule.
+
+        Args:
+            compound (Compound): The compound to apply the cleavage pattern to.
+            target_indices (Tuple[int]): List of atom indices to allow reaction.
+                                        All other atoms are protected from matching.
+
+        Returns:
+            FragmentResult or None: Contains the original molecule SMILES,
+                                    cleavage SMIRKS, and per-product fragment mapping.
+        """
+        if not self.exists(compound):
+            return None
+
+        mol = Chem.Mol(compound._mol)
+        target_indices = tuple(target_indices)
+
+        # (1) Protect all atoms except the ones specified in target_indices
+        for atom in mol.GetAtoms():
+            if atom.GetIdx() not in target_indices:
+                atom.SetBoolProp("_protected", True)
+
+        try:
+            # (2) Execute the SMIRKS pattern with protection applied
+            product_sets = self.virtual_rxn.RunReactants((mol,))
+        finally:
+            # (3) Always clear protection flags
+            for atom in mol.GetAtoms():
+                if atom.HasProp("_protected"):
+                    atom.ClearProp("_protected")
+
+        # (4) If no products are generated, return None
+        if not product_sets:
+            return None
+
+        # (5) Atom mapping preparation
+        old_atom_map_to_idx = compound.atom_map_to_idx
+        idx_to_atom_map = bidict({a.GetIdx(): a.GetAtomMapNum() for a in mol.GetAtoms()})
+        fragment_products: List[FragmentProduct] = []
+
+        # (6) Iterate through product groups
+        for product_group in product_sets:
+            frag_info = {
+                'react': [-1] * len(self.react_idx_to_map),
+                'prod': [-1] * len(self.prod_idx_to_map),
+            }
+            atom_mapping_cache = {}
+
+            # (6-1) Extract mapping information
+            for product_mol in product_group:
+                for atom in product_mol.GetAtoms():
+                    if atom.HasProp("react_atom_idx") and atom.HasProp("old_mapno"):
+                        parent_idx = int(atom.GetProp("react_atom_idx"))
+                        old_mapno = int(atom.GetProp("old_mapno"))
+                        if parent_idx in idx_to_atom_map:
+                            atom_map = idx_to_atom_map[parent_idx]
+                            react_idx = self.react_idx_to_map.inverse[old_mapno]
+                            prod_idx = self.prod_idx_to_map.inverse.get(old_mapno, -1)
+                            old_idx_in_canonical = old_atom_map_to_idx[atom_map]
+
+                            atom_mapping_cache[atom_map] = {
+                                'react_idx': react_idx,
+                                'prod_idx': prod_idx,
+                                'old_idx': old_idx_in_canonical
+                            }
+                            atom.SetAtomMapNum(idx_to_atom_map[parent_idx])
+
+            # (6-2) Build new compound and compute index mapping
+            new_compound = Compound(product_group[0])
+            if not self.is_applicable(new_compound):
+                continue
+
+            new_atom_map_to_idx = new_compound.atom_map_to_idx
+            mapped_pairs = []
+
+            for atom_map, info in atom_mapping_cache.items():
+                frag_info['react'][info['react_idx']] = info['old_idx']
+                if info['prod_idx'] != -1:
+                    new_idx = new_atom_map_to_idx[atom_map]
+                    frag_info['prod'][info['prod_idx']] = new_idx
+                    mapped_pairs.append((info['react_idx'], idx_to_atom_map.inverse[atom_map]))
+
+            # (7) Consistency check
+            assert all(idx != -1 for idx in frag_info['react']), "Not all reactant indices were mapped."
+            assert all(idx != -1 for idx in frag_info['prod']), "Not all product indices were mapped."
+
+            # (8) Append FragmentProduct
+            react_tuple = tuple(frag_info['react'])
+            prod_tuple = tuple(frag_info['prod'])
+            if react_tuple == target_indices:
+                fragment_products.append(
+                    FragmentProduct(
+                        smiles=new_compound.smiles,
+                        reactant_indices=react_tuple,
+                        product_indices=prod_tuple
+
+                    )
+                )
+
+        if len(fragment_products) == 0:
+            return None
+        
+        # (9) Wrap everything into FragmentResult
+        fragment_result = FragmentResult(
+            cleavage=self.copy(),
+            reactant_smiles=compound.smiles,
+            products=tuple(fragment_products)
+        )
+
+        return fragment_result
