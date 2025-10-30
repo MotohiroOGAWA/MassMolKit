@@ -165,3 +165,61 @@ def assign_formulas_to_peaks(
         }
 
     return results
+
+def get_isotopic_masses(formula: Formula) -> List[Tuple[float, int, int]]:
+    """
+    Calculate all possible exact masses for a given molecular formula
+    considering isotopic variations of chlorine (Cl) and bromine (Br).
+
+    For each isotopic combination, this function returns:
+        - The resulting isotopic mass (Da)
+        - The number of 37Cl atoms (heavy chlorine)
+        - The number of 81Br atoms (heavy bromine)
+
+    Assumptions:
+        - 37Cl - 35Cl = +1.99705 Da
+        - 81Br - 79Br = +1.99795 Da
+
+    Args:
+        formula (Formula): The molecular formula.
+
+    Returns:
+        List[Tuple[float, int, int]]:
+            A list of tuples:
+                (mass, n_heavy_Cl, n_heavy_Br)
+            Each entry represents one isotopic combination.
+            If no Cl or Br is present, returns [(exact_mass, 0, 0)].
+
+    Example:
+        >>> f = Formula.parse("C6H5Cl")
+        >>> get_isotopic_masses(f)
+        [(112.00085, 0, 0), (113.9979, 1, 0)]
+    """
+    # --- Base exact mass ---
+    base_mass = formula.exact_mass
+
+    # --- Count chlorine and bromine atoms ---
+    n_cl = formula._elements.get("Cl", 0)
+    n_br = formula._elements.get("Br", 0)
+
+    # --- Isotopic mass differences (Da) ---
+    delta_cl = 1.99705   # 37Cl - 35Cl
+    delta_br = 1.99795   # 81Br - 79Br
+
+    # --- No isotopic elements ---
+    if n_cl == 0 and n_br == 0:
+        return [(base_mass, 0, 0)]
+
+    # --- Enumerate all isotopic combinations ---
+    cl_indices = range(n_cl + 1) if n_cl > 0 else [0]
+    br_indices = range(n_br + 1) if n_br > 0 else [0]
+
+    results = []
+    for n_heavy_cl, n_heavy_br in product(cl_indices, br_indices):
+        delta_mass = n_heavy_cl * delta_cl + n_heavy_br * delta_br
+        mass = round(base_mass + delta_mass, 6)
+        results.append((mass, n_heavy_cl, n_heavy_br))
+
+    # --- Remove duplicates and sort by mass ---
+    results = sorted(set(results), key=lambda x: x[0])
+    return results

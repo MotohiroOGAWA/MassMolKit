@@ -6,13 +6,7 @@ from ..mass.Tolerance import MassTolerance, PpmTolerance, DaTolerance
 from ..chem.formula_utils import assign_formulas_to_peaks
 from ..chem.Formula import Formula
 
-def assign_fragment_pathway():
-    pass
-
-def func1(peaks_mz:List[float]):
-    pass
-
-def func3(
+def get_paths_for_matched_peaks(
         adducted_tree: AdductedFragmentTree, 
         adduct_type:AdductType, 
         peaks_mz:List[float],
@@ -34,7 +28,7 @@ def func3(
                     paths = _collect_path_to_root(adducted_tree, node_id)
                     return paths
 
-def func2(adducted_tree: AdductedFragmentTree, node_id: int) -> List[str]:
+def get_paths_to_root(adducted_tree: AdductedFragmentTree, node_id: int) -> List[str]:
     path = _collect_path_to_root(adducted_tree, node_id)
     return path
 

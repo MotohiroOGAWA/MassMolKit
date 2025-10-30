@@ -1,13 +1,14 @@
 import re
 from collections import OrderedDict
-from typing import Dict
+from typing import Dict, Union
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 
 class Neutron:
     """Virtual representation of a neutron particle."""
     symbol = "n"
-    mass = 1.008665  # Atomic mass in daltons (Da)
+    # mass = 1.008665  # Atomic mass in daltons (Da)
+    mass = 0.9987508525  # Halogen  mass in daltons (Da)
     charge = 0       # Neutral charge
     atomic_num = 0   # Not an element in the periodic table
 neutron = Neutron()
@@ -56,6 +57,19 @@ class Formula:
                 mass += Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atomic_number) * count
         return mass
 
+    @property
+    def is_nonnegative(self) -> bool:
+        """
+        Return True if all element counts are non-negative (>= 0).
+
+        Example:
+            >>> Formula.parse("C6H12O6").is_nonnegative
+            True
+            >>> Formula.parse("C-1H2O").is_nonnegative
+            False
+        """
+        return all(count >= 0 for count in self._elements.values())
+
     def __repr__(self):
         return f"Formula({self.__str__()})"
     
@@ -65,6 +79,17 @@ class Formula:
     
     def __hash__(self) -> int:
         return hash((frozenset(self._elements.items()), self._raw_formula, self._charge))
+    
+    def __contains__(self, item: Union['Formula', str]) -> bool:
+        if not self.is_nonnegative:
+            raise ValueError("Containment check is only supported for non-negative formulas.")
+        
+        if isinstance(item, str):
+            item = Formula.parse(item)
+        elif not isinstance(item, Formula):
+            raise TypeError(f"Containment check only supports Formula or str, not {type(item)}")
+        
+        return all(self._elements.get(elem, 0) >= count for elem, count in item._elements.items())
 
     def _parse_formula(self, formula: str):
         """
@@ -219,12 +244,30 @@ class Formula:
         return Formula(self._elements, self._charge, self._raw_formula)
     
     @classmethod
-    def parse(self, formula_str: str) -> 'Formula':
+    def parse(self, formula_str: str, store_raw: bool = True) -> 'Formula':
         """
         Create a Formula object from a formula string.
+
+        Args:
+            formula_str (str): Chemical formula string to parse.
+            store_raw (bool): If True, save the original input string to _raw_formula.
+                            If False, _raw_formula will remain an empty string.
+
+        Returns:
+            Formula: Parsed Formula object.
+
+        Example:
+            >>> Formula.parse("C6H12O6").raw_formula
+            'C6H12O6'
+            >>> Formula.parse("C6H12O6", store_raw=False).raw_formula
+            ''
         """
         f = Formula(elements={}, charge=0)
         f._parse_formula(formula_str)
+        if store_raw:
+            f._raw_formula = formula_str
+        else:
+            f._raw_formula = ""
         return f
     
     @classmethod

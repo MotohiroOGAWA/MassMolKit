@@ -2,8 +2,10 @@ from typing import List, Tuple, Dict, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import time
+from matplotlib import text
 from rdkit import Chem
 import json
+import re
 from pathlib import Path
 
 from .CleavagePattern import CleavagePattern
@@ -13,6 +15,7 @@ from ..mass.constants import AdductType, IonMode
 from ..chem.Compound import Compound, Formula
 from .FragmentResult import FragmentResult
 from .FragmentPathway import FragmentStep
+from ..mass.Adduct import Adduct
 
 class Fragmenter:
     def __init__(
@@ -59,6 +62,7 @@ class Fragmenter:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return cls.from_dict(data)
+    
 
     def cleave_compound(self, compound: Compound) -> Tuple[FragmentResult]:
         fragment_group = []
@@ -194,5 +198,6 @@ class Fragmenter:
         return Fragmenter(
             max_depth=self.max_depth,
             cleavage_pattern_lib=self.cleavage_pattern_lib,
+            only_add_min_depth=self.only_add_min_depth
         )
 

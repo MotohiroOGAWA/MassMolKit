@@ -7,6 +7,7 @@ import re
 from enum import Enum
 
 from ..chem.Compound import Compound
+from ..chem.Formula import Formula
 
 
 class FragmentTree:
@@ -78,6 +79,32 @@ class FragmentTree:
             tree = dill.load(f)
 
         return tree
+    
+    @property
+    def formula_index_map(self) -> Dict[Formula, List[int]]:
+        """
+        Get the lookup table mapping (Formula) to the list of fragment node indices
+        having that formula.
+        """
+        if not hasattr(self, '_formula_index_map') or self._formula_index_map is None:
+            self._build_formula_index_map()
+        return self._formula_index_map.copy()
+    
+    def _build_formula_index_map(self) -> None:
+        """
+        Build the lookup table mapping (Formula) to the list of fragment node indices
+        having that formula.
+        """
+        self._formula_index_map = {}
+
+        for idx, node in self.nodes.items():
+            compound = Compound.from_smiles(node.smiles)
+            formula = compound.formula
+
+            if formula not in self._formula_index_map:
+                self._formula_index_map[formula] = []
+
+            self._formula_index_map[formula].append(idx)
 
 class FragmentNode:
     """
@@ -169,6 +196,8 @@ class FragmentNode:
         Convert the FragmentNode to a TSV string.
         """
         return f"{self.id}\t{self.smiles}\t{self.parent_ids}\t{self.child_ids}\n"
+    
+
 
 class FragmentEdge:
     def __init__(

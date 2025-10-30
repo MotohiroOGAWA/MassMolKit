@@ -129,7 +129,7 @@ class CleavagePattern:
                     value_str = str(value)
                 fields.append(f"{name}={value_str}")
 
-        return f"{self.__class__.__name__};" + ";".join(fields)
+        return f"({self.__class__.__name__};" + ";".join(fields) + ")"
 
     @property
     def num_reactant_atoms(self) -> int:
@@ -172,7 +172,9 @@ class CleavagePattern:
         Returns:
             CleavagePattern: The parsed cleavage pattern.
         """
-        # 1. Remove class name prefix if present
+        # 1. Remove surrounding parentheses and class name
+        if pattern_str.startswith("(") and pattern_str.endswith(")"):
+            pattern_str = pattern_str[1:-1].strip()
         if pattern_str.startswith(cls.__name__):
             pattern_str = pattern_str[len(cls.__name__):].lstrip(";")
 
@@ -296,7 +298,7 @@ class CleavagePattern:
         # Apply the SMIRKS pattern to the molecule
         product_sets = self.virtual_rxn.RunReactants((mol,))
         # Identify all substructure matches corresponding to the reactant query
-        reactant_matches = list(mol.GetSubstructMatches(self.reactant_query))
+        # reactant_matches = list(mol.GetSubstructMatches(self.reactant_query))
 
         fragment_products:List[FragmentProduct] = []
 
