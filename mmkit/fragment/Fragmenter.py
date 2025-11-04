@@ -1,10 +1,11 @@
+import os
 from typing import List, Tuple, Dict, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import time
 from matplotlib import text
 from rdkit import Chem
-import json
+import yaml
 import re
 from pathlib import Path
 
@@ -58,17 +59,23 @@ class Fragmenter:
         only_add_min_depth = bool(data.get("only_add_min_depth", False))
         return cls(max_depth=max_depth, cleavage_pattern_lib=cleavage_pattern_lib, only_add_min_depth=only_add_min_depth)
 
-    def save_json(self, path: str):
-        """Save the library to a JSON file."""
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    def save_yaml(self, path: str):
+        """Save the library to a YAML file."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)  # ← ここが変更点
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+            yaml.safe_dump(
+                self.to_dict(),
+                f,
+                allow_unicode=True,
+                sort_keys=False,
+                indent=2
+            )
 
     @classmethod
-    def load_json(cls, path: str) -> "Fragmenter":
-        """Load a library from a JSON file."""
+    def load_yaml(cls, path: str) -> "Fragmenter":
+        """Load a library from a YAML file."""
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data = yaml.safe_load(f)
         return cls.from_dict(data)
     
 

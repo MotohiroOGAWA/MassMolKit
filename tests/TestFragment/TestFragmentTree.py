@@ -52,13 +52,13 @@ class TestFragmentTree(unittest.TestCase):
         )
 
         temp_path = os.path.join(
-            'tests', 'dummy_files', 'test_fragment_tree', 'temp', 'temp_fragmenter.json'
+            'tests', 'dummy_files', 'test_fragment_tree', 'temp', 'temp_fragmenter.yaml'
         )
         self.temp_files.append(temp_path)
 
         # Save and load
-        fragmenter.save_json(temp_path)
-        loaded_fragmenter = Fragmenter.load_json(temp_path)
+        fragmenter.save_yaml(temp_path)
+        loaded_fragmenter = Fragmenter.load_yaml(temp_path)
 
         # Verify equality
         self.assertEqual(fragmenter.max_depth, loaded_fragmenter.max_depth)
