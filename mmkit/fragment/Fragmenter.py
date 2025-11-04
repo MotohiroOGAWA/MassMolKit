@@ -28,6 +28,14 @@ class Fragmenter:
         self.cleavage_pattern_lib = cleavage_pattern_lib
         self.only_add_min_depth = only_add_min_depth
 
+    @property
+    def patterns(self) -> List[CleavagePattern]:
+        return self.cleavage_pattern_lib.patterns
+    
+    @property
+    def name(self) -> str:
+        return self.cleavage_pattern_lib.name
+
     def to_dict(self) -> Dict[str, str]:
         """
         Convert this Fragmenter instance into a serializable dictionary.

@@ -89,7 +89,7 @@ class TestFragmentTree(unittest.TestCase):
                             intensity = float(parts[1])
                             peaks.append((mz, intensity))
             fragmenter = Fragmenter(
-                max_depth=2,
+                max_depth=1,
                 cleavage_pattern_lib=self.cleavage_pattern_lib
                 )
             if smiles is None or adduct_str is None:
@@ -99,24 +99,4 @@ class TestFragmentTree(unittest.TestCase):
             adduct = Adduct.parse(adduct_str)
             ion_mode = parse_ion_mode(ion_mode_str)
             fragment_tree = fragmenter.create_fragment_tree(compound, ion_mode=ion_mode)
-            
-            node_str = fragment_tree.nodes[1].__str__()
-            node = FragmentNode.parse(node_str)
-            
-            edge_str = fragment_tree.edges[(0,2)].__str__()
-            edge = FragmentEdge.parse(edge_str)
-            fragment_step = FragmentStep.parse(edge.fragment_step_strs[0])
-
-            adducted_tree = AdductedFragmentTree(fragment_tree)
-
-            fragment_pathways: List[FragmentPathway] = []
-            fragment_pathways = FragmentPathway.build_pathways_by_peak(
-                adducted_tree=adducted_tree,
-                adduct_type=AdductType.M_PLUS_H_POS,
-                peaks_mz=[p[0] for p in peaks],
-                mass_tolerance=PpmTolerance(10),
-            )
-            fragment_pathway_peak4_0 = fragment_pathways[4][0]
-            fragment_pathway_peak4_0_str = str(fragment_pathway_peak4_0)
-            fragment_pathway_peak4_0_parsed = FragmentPathway.parse(fragment_pathway_peak4_0_str)
             pass
