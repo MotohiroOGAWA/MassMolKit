@@ -79,7 +79,7 @@ class Fragmenter:
         return cls.from_dict(data)
     
 
-    def cleave_compound(self, compound: Compound) -> Tuple[FragmentResult]:
+    def cleave_all(self, compound: Compound) -> Tuple[FragmentResult]:
         fragment_group = []
         for pattern in self.cleavage_pattern_lib.patterns:
             fragment_result = pattern.fragment(compound)
@@ -178,7 +178,7 @@ class Fragmenter:
             for node_idx in next_node_ids:
                 source_smiles = nodes[node_idx].smiles
                 compound = Compound.from_smiles(source_smiles)
-                frag_group = self.cleave_compound(compound)
+                frag_group = self.cleave_all(compound)
                 for frag_result in frag_group:
                     for frag_product in frag_result.products:
                         target_smiles = frag_product.smiles
