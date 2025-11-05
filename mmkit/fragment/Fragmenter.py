@@ -12,20 +12,23 @@ from pathlib import Path
 from .CleavagePattern import CleavagePattern
 from .CleavagePatternLibrary import CleavagePatternLibrary
 from .FragmentTree import FragmentTree, FragmentNode, FragmentEdge
-from ..mass.constants import AdductType, IonMode
+from ..mass.constants import IonMode
 from ..chem.Compound import Compound, Formula
 from .FragmentResult import FragmentResult
-from .FragmentPathway import FragmentStep
+from .FragmentPathway import FragmentStep, AdductedFragmentPathway
 from ..mass.Adduct import Adduct
+from ..mass.Tolerance import MassTolerance
 
 class Fragmenter:
     def __init__(
             self,
             max_depth: int,
+            adduct_types: Tuple[Adduct],
             cleavage_pattern_lib: CleavagePatternLibrary,
             only_add_min_depth: bool = True
             ):
         self.max_depth = max_depth
+        self.adduct_types = adduct_types
         self.cleavage_pattern_lib = cleavage_pattern_lib
         self.only_add_min_depth = only_add_min_depth
 
@@ -43,6 +46,7 @@ class Fragmenter:
         """
         return {
             "max_depth": self.max_depth,
+            "adduct_types": [str(adduct) for adduct in self.adduct_types],
             "cleavage_pattern_lib": self.cleavage_pattern_lib.to_dict(),
             "only_add_min_depth": self.only_add_min_depth
         }
@@ -53,11 +57,12 @@ class Fragmenter:
         Reconstruct a Fragmenter instance from a dictionary.
         """
         max_depth = int(data.get("max_depth", 1))
+        adduct_types = tuple(Adduct.parse(adduct_str) for adduct_str in data.get("adduct_types", []))
         cleavage_pattern_lib = CleavagePatternLibrary.from_dict(
             data.get("cleavage_pattern_lib", {})
         )
         only_add_min_depth = bool(data.get("only_add_min_depth", False))
-        return cls(max_depth=max_depth, cleavage_pattern_lib=cleavage_pattern_lib, only_add_min_depth=only_add_min_depth)
+        return cls(max_depth=max_depth, adduct_types=adduct_types, cleavage_pattern_lib=cleavage_pattern_lib, only_add_min_depth=only_add_min_depth)
 
     def save_yaml(self, path: str):
         """Save the library to a YAML file."""
@@ -202,7 +207,29 @@ class Fragmenter:
         
         fragment_tree = FragmentTree(compound=root_compound, nodes=nodes, edges=edges)
         return fragment_tree
-                
+    
+    def build_fragment_pathways_by_peak(
+            self,
+            fragment_tree: FragmentTree,
+            precursor_type: Adduct,
+            peaks_mz: List[float],
+            mass_tolerance: MassTolerance,
+    ) -> List[List['AdductedFragmentPathway']]:
+        fragment_pathways_by_peak = AdductedFragmentPathway.build_pathways_by_peak(
+            fragment_tree=fragment_tree,
+            precursor_type=precursor_type,
+            supported_adduct_types=self.adduct_types,
+            peaks_mz=peaks_mz,
+            mass_tolerance=mass_tolerance,
+        )
+        return fragment_pathways_by_peak
+    
+    def list_to_str(self, fragment_pathways: List['AdductedFragmentPathway']) -> str:
+        return AdductedFragmentPathway.list_to_str(fragment_pathways)
+    
+    def parse_list(self, fragment_pathways_str: str) -> List['AdductedFragmentPathway']:
+        return AdductedFragmentPathway.parse_list(fragment_pathways_str)
+
     def copy(self) -> 'Fragmenter':
         """
         Create a copy of the current Fragmenter instance.
@@ -215,4 +242,6 @@ class Fragmenter:
             cleavage_pattern_lib=self.cleavage_pattern_lib,
             only_add_min_depth=self.only_add_min_depth
         )
+    
+
 

@@ -3,11 +3,10 @@ import json
 import re
 
 from .CleavagePattern import CleavagePattern
-from .AdductedFragmentTree import AdductedFragmentTree, FragmentTree, FragmentNode, FragmentEdge
+from .FragmentTree import FragmentTree, FragmentEdge
 from ..chem.Formula import Formula
 from ..chem.formula_utils import assign_formulas_to_peaks
 from ..mass.Tolerance import MassTolerance
-from ..mass.constants import AdductType
 from ..mass.Adduct import Adduct
 from ..chem.Compound import Compound
 
@@ -279,19 +278,20 @@ class AdductedFragmentPathway:
 
     @staticmethod
     def build_pathways_by_peak(
-        adducted_tree: AdductedFragmentTree, 
+        fragment_tree: FragmentTree, 
         precursor_type: Adduct,
+        supported_adduct_types:Tuple[Adduct],
         peaks_mz:List[float], 
         mass_tolerance:MassTolerance,
         ) -> List[List['AdductedFragmentPathway']]:
-        all_formulas_with_node_id = adducted_tree.get_all_formulas_with_node_id(precursor_type)
+        all_formulas_with_node_id = fragment_tree.get_all_formulas_with_node_id(precursor_type, supported_adduct_types=supported_adduct_types)
         formula_candidates = [f for f in all_formulas_with_node_id.keys()]
         assigned_peaks = assign_formulas_to_peaks(
             peaks_mz=peaks_mz,
             formula_candidates=formula_candidates,
             mass_tolerance=mass_tolerance,
         )
-        precursor_formula = precursor_type.calc_formula(adducted_tree.compound.formula)
+        precursor_formula = precursor_type.calc_formula(fragment_tree.compound.formula)
 
         adducted_fragment_pathways_by_peak: List[List[AdductedFragmentPathway]] = []
         for i, info in enumerate(assigned_peaks):
@@ -303,15 +303,15 @@ class AdductedFragmentPathway:
                     for adduct_formula_pair, node_indices in formula_with_node_id.items():
                         frag_formula, adduct = adduct_formula_pair
                         for node_id in node_indices:
-                            pathways = AdductedFragmentPathway.build_pathways_for_node(adducted_tree, node_id, precursor_formula, precursor_type)
+                            pathways = AdductedFragmentPathway.build_pathways_for_node(fragment_tree, node_id, precursor_formula, precursor_type)
                             adducted_pathways = [AdductedFragmentPathway(p, frag_formula, adduct) for p in pathways]
                             adducted_fragment_pathways.extend(adducted_pathways)
             adducted_fragment_pathways_by_peak.append(adducted_fragment_pathways)
         return adducted_fragment_pathways_by_peak
 
     @staticmethod
-    def build_pathways_for_node(adducted_tree: AdductedFragmentTree, node_id: int, precursor_formula: Formula, precursor_type: Adduct) -> List['FragmentPathway']:
-        path = AdductedFragmentPathway._collect_path_to_root(adducted_tree, node_id)
+    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, precursor_formula: Formula, precursor_type: Adduct) -> List['FragmentPathway']:
+        path = AdductedFragmentPathway._collect_path_to_root(fragment_tree, node_id)
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
             tmp_path = []
@@ -334,7 +334,7 @@ class AdductedFragmentPathway:
         return fragment_pathways
 
     @staticmethod
-    def _collect_path_to_root(tree:Union[AdductedFragmentTree, FragmentTree], node_id: int) -> List[List[str]]:
+    def _collect_path_to_root(tree:FragmentTree, node_id: int) -> List[List[str]]:
         """
         Recursively collect all possible paths (as lists of str(node) and str(edge))
         from the given node up to the root.

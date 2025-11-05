@@ -4,16 +4,12 @@ import re
 import glob
 from typing import List, Tuple, Dict
 from rdkit import Chem
-from mmkit.fragment.CleavagePattern import CleavagePattern
 from mmkit.fragment.CleavagePatternLibrary import CleavagePatternLibrary
 from mmkit.chem.Compound import Compound
 from mmkit.chem.formula_utils import assign_formulas_to_peaks
 from mmkit.mass.Adduct import Adduct
-from mmkit.chem.Formula import Formula
 from mmkit.fragment.Fragmenter import Fragmenter
-from mmkit.mass.constants import AdductType, IonMode, parse_ion_mode
-from mmkit.fragment.FragmentTree import FragmentTree, FragmentNode, FragmentEdge
-from mmkit.fragment.AdductedFragmentTree import AdductedFragmentTree
+from mmkit.mass.constants import parse_ion_mode
 from mmkit.mass.Tolerance import PpmTolerance, DaTolerance
 from mmkit.fragment.FragmentPathway import *
 
@@ -30,6 +26,8 @@ class TestFragmentTree(unittest.TestCase):
             os.path.join(dir, f) for f in os.listdir(dir)
             if os.path.isfile(os.path.join(dir, f)) and pattern.match(f)
         ]
+
+        self.supported_adduct_types = (Adduct.parse("[M+H]+"), Adduct.parse("[M+NH4]+"), Adduct.parse("[M+Na]+"))
         
         self.acetamide = Compound(Chem.MolFromSmiles("CC(=O)NC"))      # Acetamide
         self.ethyl_acetate = Compound(Chem.MolFromSmiles("CC(=O)OCC")) # Ethyl acetate
@@ -48,6 +46,7 @@ class TestFragmentTree(unittest.TestCase):
         """Test that Fragmenter can be correctly saved to and loaded from JSON."""
         fragmenter = Fragmenter(
             max_depth=3,
+            adduct_types=self.supported_adduct_types,
             cleavage_pattern_lib=self.cleavage_pattern_lib
         )
 
@@ -88,15 +87,31 @@ class TestFragmentTree(unittest.TestCase):
                             mz = float(parts[0])
                             intensity = float(parts[1])
                             peaks.append((mz, intensity))
+
+            
             fragmenter = Fragmenter(
                 max_depth=1,
+                adduct_types=self.supported_adduct_types,
                 cleavage_pattern_lib=self.cleavage_pattern_lib
                 )
             if smiles is None or adduct_str is None:
                 continue
             
             compound = Compound.from_smiles(smiles)
-            adduct = Adduct.parse(adduct_str)
+            precursor_type = Adduct.parse(adduct_str)
             ion_mode = parse_ion_mode(ion_mode_str)
             fragment_tree = fragmenter.create_fragment_tree(compound, ion_mode=ion_mode)
+
+            fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
+                fragment_tree=fragment_tree,
+                precursor_type=precursor_type,
+                peaks_mz=[p[0] for p in peaks],
+                mass_tolerance=DaTolerance(0.01),
+            )
+
+            for fragment_pathways in fragment_pathways_by_peak:
+                if len(fragment_pathways) == 0:
+                    continue
+                fragment_pathways_str = fragmenter.list_to_str(fragment_pathways)
+                parsed_fragment_pathways = fragmenter.parse_list(fragment_pathways_str)
             pass

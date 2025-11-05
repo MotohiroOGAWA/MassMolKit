@@ -1,4 +1,7 @@
-from typing import Tuple, List
+from __future__ import annotations
+from typing import Tuple, List, TYPE_CHECKING
+if TYPE_CHECKING:
+    from .CleavagePattern import CleavagePattern
 
 class FragmentResult:
     """
@@ -9,7 +12,7 @@ class FragmentResult:
 
     def __init__(
         self,
-        cleavage,
+        cleavage: CleavagePattern,
         reactant_smiles: str,
         products: Tuple['FragmentProduct', ...],
     ):
@@ -18,7 +21,7 @@ class FragmentResult:
         self._products = tuple(products)
 
     @property
-    def cleavage(self):
+    def cleavage(self) -> CleavagePattern:
         return self._cleavage
 
     @property
