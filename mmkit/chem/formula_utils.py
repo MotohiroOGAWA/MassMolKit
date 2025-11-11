@@ -1,4 +1,5 @@
 from typing import Dict, List, Tuple, Any
+import time
 from itertools import product
 from typing import Generator
 from.Formula import Formula
@@ -34,14 +35,17 @@ def calculate_dbe(elements: dict[str, int]) -> float:
     dbe = (2*C + N - H - X + 2) / 2.0
     return dbe
 
-def enumerate_possible_sub_formulas(elements: dict[str, int]) -> Generator[tuple[dict[str, int], float], None, None]:
+def enumerate_possible_sub_formulas(elements: dict[str, int], timeout:float=float('inf')) -> Generator[tuple[dict[str, int], float], None, None]:
     base_elements = [(elem, count) for elem, count in elements.items() if elem != "H"]
     max_h = elements.get("H", 0)
     
     # Create all combinations from 0 to the original count for each element (excluding H)
     ranges = [range(c + 1) for _, c in base_elements]
 
+    start_time = time.time()
     for counts in product(*ranges):
+        if (time.time() - start_time) > timeout:
+            raise TimeoutError("Timeout exceeded during formula enumeration.")
         # Generate element count combinations
         temp_counts = {elem: count for (elem, _), count in zip(base_elements, counts)}
         
@@ -57,7 +61,7 @@ def enumerate_possible_sub_formulas(elements: dict[str, int]) -> Generator[tuple
             
             yield temp_counts.copy(), dbe
 
-def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0) -> Dict[str, float]:
+def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0, timeout: float=float('inf')) -> Dict[str, float]:
     """
     Generate possible sub-formulas with their degree of unsaturation.
     Returns a dictionary of sub-formula strings and their DBE values.
@@ -69,7 +73,7 @@ def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0) -> Dict
 
     res = [
         Formula(elements, charge=0)
-        for elements, dbe in enumerate_possible_sub_formulas(formula.elements)
+        for elements, dbe in enumerate_possible_sub_formulas(formula.elements, timeout=timeout)
     ]
 
     res = sorted(res, key=lambda f: (f.exact_mass, f.plain))
