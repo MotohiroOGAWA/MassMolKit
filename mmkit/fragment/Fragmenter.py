@@ -66,7 +66,7 @@ class Fragmenter:
 
     def save_yaml(self, path: str):
         """Save the library to a YAML file."""
-        os.makedirs(os.path.dirname(path), exist_ok=True)  # ← ここが変更点
+        os.makedirs(os.path.dirname(path), exist_ok=True) 
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(
                 self.to_dict(),

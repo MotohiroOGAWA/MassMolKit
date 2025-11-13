@@ -275,7 +275,26 @@ class AdductedFragmentPathway:
         # Step 5: Return all parsed AdductedFragmentPathway objects
         # --------------------------------------------------------------
         return parsed_pathways
+    
+    @staticmethod
+    def build_pathways_for_precursor(
+        fragment_tree: FragmentTree, 
+        precursor_type: Adduct,
+        supported_adduct_types:Tuple[Adduct],
+    ) -> List['AdductedFragmentPathway']:
+        all_formulas_with_node_id = fragment_tree.get_all_formulas_with_node_id(precursor_type, supported_adduct_types=supported_adduct_types)
+        precursor_formula = precursor_type.calc_formula(fragment_tree.compound.formula)
 
+        adducted_precursor_pathways: List[AdductedFragmentPathway] = []
+        formula_with_node_id = all_formulas_with_node_id[precursor_formula]
+        for adduct_formula_pair, node_indices in formula_with_node_id.items():
+            frag_formula, adduct = adduct_formula_pair
+            for node_id in node_indices:
+                pathways = AdductedFragmentPathway.build_pathways_for_node(fragment_tree, node_id, precursor_formula, precursor_type)
+                adducted_pathways = [AdductedFragmentPathway(p, frag_formula, adduct) for p in pathways]
+                adducted_precursor_pathways.extend(adducted_pathways)
+        return adducted_precursor_pathways
+    
     @staticmethod
     def build_pathways_by_peak(
         fragment_tree: FragmentTree, 
