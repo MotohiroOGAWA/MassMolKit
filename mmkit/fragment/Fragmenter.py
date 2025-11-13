@@ -88,7 +88,7 @@ class Fragmenter:
         fragment_group = []
         for pattern in self.cleavage_pattern_lib.patterns:
             fragment_result = pattern.fragment(compound)
-            if fragment_result is not None:
+            if fragment_result is not None and len(fragment_result.products) > 0:
                 fragment_group.append(fragment_result)
 
         return tuple(fragment_group)
