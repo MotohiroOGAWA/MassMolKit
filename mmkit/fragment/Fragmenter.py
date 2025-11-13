@@ -208,6 +208,18 @@ class Fragmenter:
         fragment_tree = FragmentTree(compound=root_compound, nodes=nodes, edges=edges)
         return fragment_tree
     
+    def build_fragment_pathways_for_precursor(
+            self,
+            fragment_tree: FragmentTree,
+            precursor_type: Adduct,
+    ) -> List['AdductedFragmentPathway']:
+        fragment_pathways = AdductedFragmentPathway.build_pathways_for_precursor(
+            fragment_tree=fragment_tree,
+            precursor_type=precursor_type,
+            supported_adduct_types=self.adduct_types,
+        )
+        return fragment_pathways
+    
     def build_fragment_pathways_by_peak(
             self,
             fragment_tree: FragmentTree,
