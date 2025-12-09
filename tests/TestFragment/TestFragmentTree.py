@@ -41,6 +41,17 @@ class TestFragmentTree(unittest.TestCase):
             if os.path.exists(path):
                 os.remove(path)
 
+    def test_cleavage_patterns(self):
+        cleavage = CleavagePattern(smirks='[#6,#7,#8:1]-[#6,#7,#8:2]-[#9,#17,#35,#53:3]>>[*:1]=[*:2]',charge_mode='positive1')
+        c = Compound.from_smiles("BrC(Br)(Br)[C+]c1cnc2ccccc2n1")  # Cycloheptane
+        result = cleavage.fragment(c)  # Precompute the cleavage
+        pass
+
+        cleavage = CleavagePattern(smirks='[*:1]-[*:2]1-[*:3]-[*:4]-[*:5]-[*:6]-[*:7]-1>>[*:1]-[*:2]=[*:7]',charge_mode='positive1')
+        c = Compound.from_smiles("[C+]CC1CCCCC1")  # Cycloheptane
+        result = cleavage.fragment(c)  # Precompute the cleavage
+        
+
     # ----------------------------------------------------------------------
     def test_fragmenter_serialization(self):
         """Test that Fragmenter can be correctly saved to and loaded from JSON."""
@@ -88,30 +99,58 @@ class TestFragmentTree(unittest.TestCase):
                             intensity = float(parts[1])
                             peaks.append((mz, intensity))
 
-            
-            fragmenter = Fragmenter(
-                max_depth=1,
-                adduct_types=self.supported_adduct_types,
-                cleavage_pattern_lib=self.cleavage_pattern_lib
-                )
-            if smiles is None or adduct_str is None:
-                continue
-            
+            if smiles is None or adduct_str is None or ion_mode_str is None:
+                continue  # Skip invalid files
             compound = Compound.from_smiles(smiles)
             precursor_type = Adduct.parse(adduct_str)
             ion_mode = parse_ion_mode(ion_mode_str)
-            fragment_tree = fragmenter.create_fragment_tree(compound, ion_mode=ion_mode)
+            
+            # --- Fragmenter ---
+            fragmenter = Fragmenter(
+                max_depth=8,
+                adduct_types=self.supported_adduct_types,
+                cleavage_pattern_lib=self.cleavage_pattern_lib,
+            )
 
+            # --- Fragment tree ---
+            fragment_tree = fragmenter.create_fragment_tree(
+                compound,
+                ion_mode=ion_mode,
+                timeout_seconds=5,
+            )
+            self.assertIsNotNone(fragment_tree)
+            depths = fragment_tree.get_nodes_by_depth()
+
+            # --- Precursor pathways ---
+            precursor_pathways = fragmenter.build_fragment_pathways_for_precursor(
+                fragment_tree=fragment_tree,
+                precursor_type=precursor_type,
+            )
+            self.assertTrue(len(precursor_pathways) > 0, "Precursor pathways should not be empty")
+
+            # Convert to string and parse back
+            precursor_pathway_str = fragmenter.list_to_str(precursor_pathways)
+            precursor_parsed = fragmenter.parse_list(precursor_pathway_str)
+            self.assertEqual(len(precursor_pathways), len(precursor_parsed))
+
+            # --- Peak-level pathways ---
+            peaks_mz = [mz for mz, intensity in peaks]
             fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
                 fragment_tree=fragment_tree,
                 precursor_type=precursor_type,
-                peaks_mz=[p[0] for p in peaks],
+                peaks_mz=peaks_mz,
                 mass_tolerance=DaTolerance(0.01),
             )
+            self.assertEqual(len(fragment_pathways_by_peak), len(peaks_mz))
 
-            for fragment_pathways in fragment_pathways_by_peak:
-                if len(fragment_pathways) == 0:
+            # For each peak, validate that parsing works
+            for fp_list in fragment_pathways_by_peak:
+                if len(fp_list) == 0:
                     continue
-                fragment_pathways_str = fragmenter.list_to_str(fragment_pathways)
-                parsed_fragment_pathways = fragmenter.parse_list(fragment_pathways_str)
-            pass
+
+                fp_str = fragmenter.list_to_str(fp_list)
+                fp_parsed = fragmenter.parse_list(fp_str)
+                self.assertEqual(len(fp_list), len(fp_parsed))
+
+            # If all passes
+            print("✓ precursor pathway test passed")

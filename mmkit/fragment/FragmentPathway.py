@@ -7,7 +7,7 @@ from .FragmentTree import FragmentTree, FragmentEdge
 from ..chem.Formula import Formula
 from ..chem.formula_utils import assign_formulas_to_peaks
 from ..mass.Tolerance import MassTolerance
-from ..mass.Adduct import Adduct
+from ..mass.Adduct import Adduct, split_adduct_components
 from ..chem.Compound import Compound
 
 class AdductedFragmentPathway:
@@ -286,6 +286,9 @@ class AdductedFragmentPathway:
         precursor_formula = precursor_type.calc_formula(fragment_tree.compound.formula)
 
         adducted_precursor_pathways: List[AdductedFragmentPathway] = []
+        if precursor_formula not in all_formulas_with_node_id:
+            return adducted_precursor_pathways
+        
         formula_with_node_id = all_formulas_with_node_id[precursor_formula]
         for adduct_formula_pair, node_indices in formula_with_node_id.items():
             frag_formula, adduct = adduct_formula_pair
@@ -312,6 +315,11 @@ class AdductedFragmentPathway:
         )
         precursor_formula = precursor_type.calc_formula(fragment_tree.compound.formula)
 
+        adduct_composition, neutral_component_adduct = split_adduct_components(precursor_type, reference_adducts=supported_adduct_types)
+        assert len(adduct_composition) == 1, "Precursor adduct must contain only one adduct component."
+        adduct_type = next(iter(adduct_composition))
+        assert adduct_composition[adduct_type] == 1, "Precursor adduct must contain only one adduct component."
+
         adducted_fragment_pathways_by_peak: List[List[AdductedFragmentPathway]] = []
         for i, info in enumerate(assigned_peaks):
             adducted_fragment_pathways = []
@@ -322,14 +330,14 @@ class AdductedFragmentPathway:
                     for adduct_formula_pair, node_indices in formula_with_node_id.items():
                         frag_formula, adduct = adduct_formula_pair
                         for node_id in node_indices:
-                            pathways = AdductedFragmentPathway.build_pathways_for_node(fragment_tree, node_id, precursor_formula, precursor_type)
+                            pathways = AdductedFragmentPathway.build_pathways_for_node(fragment_tree, node_id, precursor_formula, adduct_type)
                             adducted_pathways = [AdductedFragmentPathway(p, frag_formula, adduct) for p in pathways]
                             adducted_fragment_pathways.extend(adducted_pathways)
             adducted_fragment_pathways_by_peak.append(adducted_fragment_pathways)
         return adducted_fragment_pathways_by_peak
 
     @staticmethod
-    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, precursor_formula: Formula, precursor_type: Adduct) -> List['FragmentPathway']:
+    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, precursor_formula: Formula, adduct_type: Adduct) -> List['FragmentPathway']:
         path = AdductedFragmentPathway._collect_path_to_root(fragment_tree, node_id)
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
@@ -337,7 +345,7 @@ class AdductedFragmentPathway:
             for i in range(len(p)):
                 if i % 2 == 0:
                     compound = Compound.from_smiles(p[i])
-                    if str(precursor_formula) == str(precursor_type.calc_formula(compound.formula)):
+                    if str(precursor_formula) == str(adduct_type.calc_formula(compound.formula)):
                         is_precursor = True
                     else:
                         is_precursor = False

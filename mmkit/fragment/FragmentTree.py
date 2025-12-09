@@ -175,6 +175,52 @@ class FragmentTree:
         formula_with_node_id = self.get_all_formulas_with_node_id(precursor_type)
         return (k for k in formula_with_node_id.keys())
 
+    def get_nodes_by_depth(self) -> Dict[int, List[int]]:
+        """
+        Return a mapping: depth -> list of node IDs.
+        Depth starts at 0 for the root node(s).
+        If multiple paths reach a node, the minimum depth is used.
+        """
+
+        if not self.nodes:
+            return {}
+
+        # --- 1) Find root nodes (nodes without parents) ---
+        root_id = 0
+
+        # --- 2) Initialize BFS ---
+        from collections import deque, defaultdict
+
+        queue = deque()
+        depth_map = {}  # node_id -> depth
+
+        # Initialize all roots as depth=0
+        queue.append((root_id, 0))
+
+        # --- 3) BFS to compute minimal depth of each node ---
+        while queue:
+            node_id, depth = queue.popleft()
+
+            node = self.nodes[node_id]
+            for child_id in node.child_ids:
+
+                # If unassigned, assign depth+1
+                if child_id not in depth_map:
+                    depth_map[child_id] = depth + 1
+                    queue.append((child_id, depth + 1))
+
+                # If already assigned, keep the minimum depth
+                elif depth + 1 < depth_map[child_id]:
+                    depth_map[child_id] = depth + 1
+                    queue.append((child_id, depth + 1))
+
+        # --- 4) Convert depth_map → depth -> list[node_id] ---
+        depth_to_nodes = defaultdict(list)
+        for node_id, depth in depth_map.items():
+            depth_to_nodes[depth].append(node_id)
+
+        # Sort each node list for consistency
+        return {d: sorted(ids) for d, ids in depth_to_nodes.items()}
 
 class FragmentNode:
     """

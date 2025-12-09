@@ -335,7 +335,11 @@ class CleavagePattern:
 
             # -----------------------------------------------------------------
             # (2) Build new compound and compute final index mapping
-            new_compound = Compound(product_group[0])
+            try:
+                new_compound = Compound(product_group[0])
+            except Exception as e:
+                continue
+            
             if not self.is_applicable(new_compound):
                 continue
             new_atom_map_to_idx = new_compound.atom_map_to_idx
@@ -442,8 +446,11 @@ class CleavagePattern:
                             atom.SetAtomMapNum(idx_to_atom_map[parent_idx])
 
             # (6-2) Build new compound and compute index mapping
-            new_compound = Compound(product_group[0])
-            if not self.is_applicable(new_compound):
+            try:
+                new_compound = Compound(product_group[0])
+                if not self.is_applicable(new_compound):
+                    continue
+            except Exception as e:
                 continue
 
             new_atom_map_to_idx = new_compound.atom_map_to_idx
