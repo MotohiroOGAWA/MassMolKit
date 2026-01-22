@@ -156,51 +156,86 @@ _SWITCH_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
+_FIXED_RE = re.compile(
+    r"""
+    ^
+    (?P<val>[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)
+    (?P<unit>da|ppm)
+    $
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
 
 def parse_mass_tolerance(
     tolerance_value: str,
     tolerance_unit: str,
-) -> MassTolerance:
+) -> "MassTolerance":
     """
-    Parse mass tolerance from arguments.
+    Parse mass tolerance from arguments and dispatch to an appropriate class.
 
-    Accepted format for tolerance_value:
+    Supported formats
+    -----------------
+    1) SwitchingWithinTolerance (strict):
         switch:<da>da,<ppm>ppm@<switch_mass>
+        e.g. switch:0.01da,10ppm@500
 
+    2) Fixed tolerance (strict):
+        <value><unit>
+        e.g. 0.01da, 10ppm
+
+    Unit argument
+    -------------
     tolerance_unit:
-        "da" or "ppm" (controls error()/unit representation)
+        "da" or "ppm"
+        - For SwitchingWithinTolerance: controls mode (error()/unit representation)
+        - For Fixed tolerance:
+            If tolerance_value contains its own suffix (da/ppm), that suffix is used.
+            Otherwise, this function raises (we keep strict behavior).
     """
-    unit = tolerance_unit.lower()
-    if unit not in ("da", "ppm"):
+    unit_arg = tolerance_unit.lower()
+    if unit_arg not in ("da", "ppm"):
         raise ValueError("tolerance_unit must be 'da' or 'ppm'")
 
     spec = tolerance_value.strip()
 
-    # --- SwitchingWithinTolerance only ---
+    # --- 1) SwitchingWithinTolerance ---
     m = _SWITCH_RE.match(spec)
-    if not m:
-        raise ValueError(
-            "Invalid tolerance format. Expected exactly: "
-            "'switch:<da>da,<ppm>ppm@<switch_mass>' "
-            "(e.g. 'switch:0.01da,10ppm@500')"
+    if m:
+        da_within = float(m.group("da"))
+        ppm_within = float(m.group("ppm"))
+        switch_mass = float(m.group("switch_mass"))
+
+        if da_within <= 0:
+            raise ValueError("da_within must be > 0")
+        if ppm_within <= 0:
+            raise ValueError("ppm_within must be > 0")
+        if switch_mass <= 0:
+            raise ValueError("switch_mass must be > 0")
+
+        mode = "Da" if unit_arg == "da" else "ppm"
+        return SwitchingWithinTolerance(
+            mode=mode,
+            da_within=da_within,
+            ppm_within=ppm_within,
+            switch_mass=switch_mass,
         )
 
-    da_within = float(m.group("da"))
-    ppm_within = float(m.group("ppm"))
-    switch_mass = float(m.group("switch_mass"))
+    # --- 2) Fixed tolerance: "<value><unit>" only ---
+    m = _FIXED_RE.match(spec)
+    if m:
+        val = float(m.group("val"))
+        u = m.group("unit").lower()
+        if val <= 0:
+            raise ValueError("tolerance_value must be > 0")
 
-    if da_within <= 0:
-        raise ValueError("da_within must be > 0")
-    if ppm_within <= 0:
-        raise ValueError("ppm_within must be > 0")
-    if switch_mass <= 0:
-        raise ValueError("switch_mass must be > 0")
+        if u == "da":
+            return DaTolerance(val)
+        else:
+            return PpmTolerance(val)
 
-    mode = "Da" if unit == "da" else "ppm"
-
-    return SwitchingWithinTolerance(
-        mode=mode,
-        da_within=da_within,
-        ppm_within=ppm_within,
-        switch_mass=switch_mass,
+    raise ValueError(
+        "Invalid tolerance format. Supported formats are:\n"
+        "  - switch:<da>da,<ppm>ppm@<switch_mass>  (e.g. switch:0.01da,10ppm@500)\n"
+        "  - <value><unit>                        (e.g. 0.01da or 10ppm)"
     )

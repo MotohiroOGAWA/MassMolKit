@@ -93,38 +93,58 @@ class TestSwitchingWithinTolerance(unittest.TestCase):
         with self.assertRaises(ValueError):
             SwitchingWithinTolerance(mode="xyz", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
 
-    def test_parse_switch_da_mode(self):
+
+class TestParseMassToleranceDispatch(unittest.TestCase):
+    def test_parse_switch_to_switching_da_mode(self):
         tol = parse_mass_tolerance("switch:0.01da,10ppm@500", "da")
         self.assertIsInstance(tol, SwitchingWithinTolerance)
         self.assertEqual(tol.unit, "Da")
         self.assertAlmostEqual(tol._da_within.tolerance, 0.01, places=12)
         self.assertAlmostEqual(tol._ppm_within.tolerance, 10.0, places=12)
         self.assertAlmostEqual(tol.switch_mass, 500.0, places=12)
-        # mode=Da => tolerance should equal da_within
+        # mode=Da => MassTolerance.tolerance should be da_within
         self.assertAlmostEqual(tol.tolerance, 0.01, places=12)
 
-    def test_parse_switch_ppm_mode(self):
+    def test_parse_switch_to_switching_ppm_mode(self):
         tol = parse_mass_tolerance("switch:0.01da,10ppm@500", "ppm")
         self.assertIsInstance(tol, SwitchingWithinTolerance)
         self.assertEqual(tol.unit, "ppm")
-        # mode=ppm => tolerance should equal ppm_within
+        # mode=ppm => MassTolerance.tolerance should be ppm_within
         self.assertAlmostEqual(tol.tolerance, 10.0, places=12)
 
-    def test_parse_invalid_unit_raises(self):
-        with self.assertRaises(ValueError):
-            parse_mass_tolerance("switch:0.01da,10ppm@500", "mDa")
+    def test_parse_fixed_da(self):
+        tol = parse_mass_tolerance("0.01da", "ppm")  # unit arg ignored for fixed
+        self.assertIsInstance(tol, DaTolerance)
+        self.assertEqual(tol.unit, "Da")
+        self.assertAlmostEqual(tol.tolerance, 0.01, places=12)
 
-    def test_parse_invalid_format_raises(self):
-        with self.assertRaises(ValueError):
-            parse_mass_tolerance("0.01da,10ppm@500", "ppm")  # missing "switch:"
+    def test_parse_fixed_ppm(self):
+        tol = parse_mass_tolerance("10ppm", "da")  # unit arg ignored for fixed
+        self.assertIsInstance(tol, PpmTolerance)
+        self.assertEqual(tol.unit, "ppm")
+        self.assertAlmostEqual(tol.tolerance, 10.0, places=12)
 
-    def test_parse_negative_values_raise(self):
+    def test_invalid_unit_arg_raises(self):
+        with self.assertRaises(ValueError):
+            parse_mass_tolerance("10ppm", "mdalton")
+
+    def test_invalid_format_raises(self):
+        with self.assertRaises(ValueError):
+            parse_mass_tolerance("10", "ppm")  # strict: no suffix and not switch-format
+
+    def test_negative_or_zero_fixed_raises(self):
+        with self.assertRaises(ValueError):
+            parse_mass_tolerance("0da", "da")
+        with self.assertRaises(ValueError):
+            parse_mass_tolerance("-1ppm", "ppm")
+
+    def test_negative_or_zero_switch_raises(self):
         with self.assertRaises(ValueError):
             parse_mass_tolerance("switch:-0.01da,10ppm@500", "ppm")
         with self.assertRaises(ValueError):
             parse_mass_tolerance("switch:0.01da,-10ppm@500", "ppm")
         with self.assertRaises(ValueError):
-            parse_mass_tolerance("switch:0.01da,10ppm@-500", "ppm")
+            parse_mass_tolerance("switch:0.01da,10ppm@0", "ppm")
 
 
 if __name__ == "__main__":
