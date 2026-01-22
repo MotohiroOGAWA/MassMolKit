@@ -132,6 +132,44 @@ class Adduct:
         """
         return hash(self.__str__())
     
+    def __add__(self, other: "Adduct") -> "Adduct":
+        if not isinstance(other, Adduct):
+            return NotImplemented
+
+        # Ion type consistency check
+        if self._ion_type != other._ion_type:
+            raise ValueError(
+                f"Cannot add Adducts with different ion_type: "
+                f"{self._ion_type} + {other._ion_type}"
+            )
+
+        # Merge formula counts
+        merged_formula_counts: dict[Formula, int] = defaultdict(int)
+
+        for f, cnt in self._adduct_formulas.items():
+            merged_formula_counts[f] += cnt
+
+        for f, cnt in other._adduct_formulas.items():
+            merged_formula_counts[f] += cnt
+
+        # Reconstruct adducts_in / adducts_out
+        adducts_in: List[Formula] = []
+        adducts_out: List[Formula] = []
+
+        for f, cnt in merged_formula_counts.items():
+            if cnt > 0:
+                adducts_in.extend([f.copy()] * cnt)
+            elif cnt < 0:
+                adducts_out.extend([f.copy()] * (-cnt))
+
+        return Adduct(
+            ion_type=self._ion_type,
+            n_molecules=self._n_molecules + other._n_molecules,
+            adducts_in=adducts_in,
+            adducts_out=adducts_out,
+            charge_offset=self._charge + other._charge,
+        )
+
     def copy(self) -> "Adduct":
         """
         Create a copy of the adduct.

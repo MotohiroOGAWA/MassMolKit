@@ -78,7 +78,7 @@ class Formula:
         return self.to_string(no_charge=False)
     
     def __hash__(self) -> int:
-        return hash((frozenset(self._elements.items()), self._raw_formula, self._charge))
+        return hash((self.value, self._raw_formula))
     
     def __contains__(self, item: Union['Formula', str]) -> bool:
         if not self.is_nonnegative:
@@ -171,6 +171,27 @@ class Formula:
         
         return str(self) == str(other)
     
+    def eq(self, other: 'Formula', ignore_raw: bool = True) -> bool:
+        """
+        Check equality with option to ignore raw_formula.
+
+        Args:
+            other (Formula): Another Formula to compare.
+            ignore_raw (bool): If True, ignore raw_formula in comparison.
+
+        Returns:
+            bool: True if equal, False otherwise.
+        """
+        if not isinstance(other, Formula):
+            return False
+        
+        flag = self.__eq__(other)
+
+        if ignore_raw:
+            return flag
+        else:
+            return flag and (self._raw_formula == other._raw_formula)
+    
     @property
     def value(self) -> str:
         """
@@ -179,11 +200,40 @@ class Formula:
         return self.to_string(no_charge=False)
     
     @property
-    def plain(self) -> str:
+    def plain_value(self) -> 'str':
         """
         Return the formula as a plain string without charge.
         """
         return self.to_string(no_charge=True)
+    
+    @property
+    def plain(self) -> 'Formula':
+        """
+        Return a new Formula without charge.
+        """
+        return Formula(self._elements, 0, self._raw_formula)
+    
+    @property
+    def normalized(self) -> "Formula":
+        """
+        Return a new Formula with raw_formula cleared.
+        """
+        return Formula(
+            elements=self._elements.copy(),
+            charge=self._charge,
+            raw_formula=""
+        )
+    
+    @property
+    def normalized_plain(self) -> "Formula":
+        """
+        Return a new Formula without charge and with raw_formula cleared.
+        """
+        return Formula(
+            elements=self._elements.copy(),
+            charge=0,
+            raw_formula=""
+        )
 
     def _reorder_elements(self, element_counts: Dict[str, int]):
         """Apply Hill system ordering to elements and store as OrderedDict."""
@@ -243,6 +293,17 @@ class Formula:
     def copy(self) -> 'Formula':
         return Formula(self._elements, self._charge, self._raw_formula)
     
+    @property
+    def normalized(self) -> "Formula":
+        """
+        Return a new Formula with raw_formula cleared.
+        """
+        return Formula(
+            elements=self._elements.copy(),
+            charge=self._charge,
+            raw_formula=""
+        )
+
     @classmethod
     def parse(self, formula_str: str, store_raw: bool = True) -> 'Formula':
         """

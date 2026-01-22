@@ -62,14 +62,14 @@ class TestFormula(unittest.TestCase):
     def test_to_string_and_value_plain(self):
         # Test string representations with and without charges
         for name, entry in self.formulas.items():
-            f = entry['formula']
+            f: Formula = entry['formula']
             self.assertEqual(f.to_string(no_charge=False), entry['value'],
                              msg=f"Mismatch in to_string(no_charge=False) for {name}")
             self.assertEqual(f.to_string(no_charge=True), entry['plain'],
                                 msg=f"Mismatch in to_string(no_charge=True) for {name}")
             self.assertEqual(f.value, entry['value'],
                                 msg=f"Mismatch in value property for {name}")
-            self.assertEqual(f.plain, entry['plain'],
+            self.assertEqual(f.plain_value, entry['plain'],
                                 msg=f"Mismatch in plain property for {name}")
             
 

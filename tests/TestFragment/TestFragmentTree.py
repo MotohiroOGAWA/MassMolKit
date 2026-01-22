@@ -2,15 +2,18 @@ import unittest
 import os
 import re
 import glob
+import numpy as np
 from typing import List, Tuple, Dict
 from rdkit import Chem
-from mmkit.fragment.CleavagePatternLibrary import CleavagePatternLibrary
+from mmkit.fragment.CleavagePatternSet import CleavagePatternSet
+from mmkit.fragment.HydrogenRearrangement import HydrogenRearrangement
 from mmkit.chem.Compound import Compound
 from mmkit.chem.formula_utils import assign_formulas_to_peaks
 from mmkit.mass.Adduct import Adduct
+from mmkit.fragment.FragmentTreeBuilder import FragmentTreeBuilder
 from mmkit.fragment.Fragmenter import Fragmenter
 from mmkit.mass.constants import parse_ion_mode
-from mmkit.mass.Tolerance import PpmTolerance, DaTolerance
+from mmkit.mass.Tolerance import PpmTolerance, DaTolerance, SwitchingWithinTolerance
 from mmkit.fragment.FragmentPathway import *
 
 
@@ -19,7 +22,8 @@ class TestFragmentTree(unittest.TestCase):
         """Prepare common test molecules"""
         self.temp_files = []  # Register the temporary file for cleanup
 
-        self.cleavage_pattern_lib = CleavagePatternLibrary.load_default_positive()
+        self.cleavage_pattern_set = CleavagePatternSet.load_default_positive()
+        self.hydrogen_rearrangement = HydrogenRearrangement.load_default_positive()
         dir = os.path.join('tests', 'dummy_files', 'test_fragment_tree')
         pattern = re.compile(r"^compound\d+.*\.txt$", re.IGNORECASE)
         self.input_files = [
@@ -51,14 +55,17 @@ class TestFragmentTree(unittest.TestCase):
         c = Compound.from_smiles("[C+]CC1CCCCC1")  # Cycloheptane
         result = cleavage.fragment(c)  # Precompute the cleavage
         
-
-    # ----------------------------------------------------------------------
     def test_fragmenter_serialization(self):
         """Test that Fragmenter can be correctly saved to and loaded from JSON."""
-        fragmenter = Fragmenter(
+        fragment_tree_builder = FragmentTreeBuilder(
             max_depth=3,
+            cleavage_pattern_set=self.cleavage_pattern_set,
+        )
+        fragmenter = Fragmenter(
+            ion_mode=parse_ion_mode("positive"),
+            fragment_tree_builder=fragment_tree_builder,
             adduct_types=self.supported_adduct_types,
-            cleavage_pattern_lib=self.cleavage_pattern_lib
+            hydrogen_rearrangement=self.hydrogen_rearrangement,
         )
 
         temp_path = os.path.join(
@@ -67,17 +74,88 @@ class TestFragmentTree(unittest.TestCase):
         self.temp_files.append(temp_path)
 
         # Save and load
-        fragmenter.save_yaml(temp_path)
-        loaded_fragmenter = Fragmenter.load_yaml(temp_path)
+        fragmenter.to_yaml(temp_path)
+        loaded_fragmenter = Fragmenter.from_yaml(temp_path)
 
         # Verify equality
-        self.assertEqual(fragmenter.max_depth, loaded_fragmenter.max_depth)
+        self.assertEqual(fragmenter.tree_max_depth, loaded_fragmenter.tree_max_depth)
         self.assertEqual(
-            len(fragmenter.cleavage_pattern_lib),
-            len(loaded_fragmenter.cleavage_pattern_lib)
+            len(fragmenter.cleavage_pattern_set),
+            len(loaded_fragmenter.cleavage_pattern_set)
         )
 
-    def test_tree_construction(self):
+    def test_fragment_tree_serialization(self):
+        """Test that FragmentTree can be correctly saved to and loaded from JSON."""
+        fragment_tree_builder = FragmentTreeBuilder(
+            max_depth=3,
+            cleavage_pattern_set=self.cleavage_pattern_set,
+        )
+        compound = self.acetamide
+
+        fragment_tree = fragment_tree_builder.create_fragment_tree(
+            compound,
+            timeout_seconds=float('inf'),
+        )
+        depths = fragment_tree.get_nodes_by_depth()
+        self.assertEqual(fragment_tree.smiles, compound.smiles)
+
+        # ---- Save to HDF5 (overwrite) ----
+        tmp_path = os.path.join("tests", "dummy_files", "test_fragment_tree", "tmp_fragment_tree.h5")
+        self.temp_files.append(tmp_path)
+
+        tree_id = "acetamide_pos_depth3"
+        fragment_tree.to_hdf5(tmp_path, tree_id=tree_id, mode="w")
+
+        # ---- Ensure tree_id is recorded in metadata ----
+        stored_ids = FragmentTree.list_tree_ids(tmp_path)
+        self.assertIn(tree_id, stored_ids)
+
+        # ---- Load back ----
+        loaded_tree = FragmentTree.from_hdf5(tmp_path, tree_id=tree_id)
+
+        # ---- Basic equality checks ----
+        self.assertEqual(fragment_tree.smiles, loaded_tree.smiles)
+        self.assertEqual(fragment_tree.num_nodes, loaded_tree.num_nodes)
+        self.assertEqual(fragment_tree.num_edges, loaded_tree.num_edges)
+
+        # ---- Array equality checks ----
+        np.testing.assert_array_equal(fragment_tree._node_smiles, loaded_tree._node_smiles)
+        np.testing.assert_array_equal(fragment_tree._edge_index, loaded_tree._edge_index)
+        np.testing.assert_array_equal(fragment_tree._edge_step_indptr, loaded_tree._edge_step_indptr)
+        np.testing.assert_array_equal(fragment_tree._edge_step_flat, loaded_tree._edge_step_flat)
+
+        # ---- Optional CSR caches: build in both, then compare ----
+        fragment_tree._build_edge_adjacency()
+        loaded_tree._build_edge_adjacency()
+        np.testing.assert_array_equal(fragment_tree._in_edge_ids, loaded_tree._in_edge_ids)
+        np.testing.assert_array_equal(fragment_tree._in_edge_indptr, loaded_tree._in_edge_indptr)
+        np.testing.assert_array_equal(fragment_tree._out_edge_ids, loaded_tree._out_edge_ids)
+        np.testing.assert_array_equal(fragment_tree._out_edge_indptr, loaded_tree._out_edge_indptr)
+        # ---- Check overwrite semantics (same tree_id should overwrite) ----
+        # Create a different tree (different compound) and overwrite same tree_id in append mode
+        fragment_tree2 = fragment_tree_builder.create_fragment_tree(
+            self.ethyl_acetate,
+            timeout_seconds=float('inf'),
+        )
+        fragment_tree2.to_hdf5(tmp_path, tree_id=tree_id, mode="a")  # overwrite expected
+
+        loaded_tree2 = FragmentTree.from_hdf5(tmp_path, tree_id=tree_id)
+
+        # Now it should match fragment_tree2, not fragment_tree
+        self.assertEqual(fragment_tree2.smiles, loaded_tree2.smiles)
+        self.assertEqual(fragment_tree2.num_nodes, loaded_tree2.num_nodes)
+        self.assertEqual(fragment_tree2.num_edges, loaded_tree2.num_edges)
+        np.testing.assert_array_equal(fragment_tree2._edge_index, loaded_tree2._edge_index)
+
+        # ---- Append a second tree_id and confirm metadata updated ----
+        tree_id2 = "ethyl_acetate_pos_depth3"
+        fragment_tree2.to_hdf5(tmp_path, tree_id=tree_id2, mode="a")
+
+        stored_ids2 = FragmentTree.list_tree_ids(tmp_path)
+        self.assertIn(tree_id, stored_ids2)
+        self.assertIn(tree_id2, stored_ids2)
+
+    def test_pathway_construction(self):
         for input_file in self.input_files:
             smiles = None
             adduct_str = None
@@ -106,51 +184,41 @@ class TestFragmentTree(unittest.TestCase):
             ion_mode = parse_ion_mode(ion_mode_str)
             
             # --- Fragmenter ---
+            fragment_tree_builder = FragmentTreeBuilder(
+                max_depth=3,
+                cleavage_pattern_set=self.cleavage_pattern_set,
+            )
             fragmenter = Fragmenter(
-                max_depth=8,
+                ion_mode=parse_ion_mode("positive"),
+                fragment_tree_builder=fragment_tree_builder,
                 adduct_types=self.supported_adduct_types,
-                cleavage_pattern_lib=self.cleavage_pattern_lib,
+                hydrogen_rearrangement=self.hydrogen_rearrangement,
             )
 
             # --- Fragment tree ---
-            fragment_tree = fragmenter.create_fragment_tree(
+            h_fragment_tree = fragmenter.create_hydrogen_rearranged_fragment_tree(
                 compound,
-                ion_mode=ion_mode,
-                timeout_seconds=5,
+                timeout_seconds=float('inf'),
             )
-            self.assertIsNotNone(fragment_tree)
-            depths = fragment_tree.get_nodes_by_depth()
-
-            # --- Precursor pathways ---
-            precursor_pathways = fragmenter.build_fragment_pathways_for_precursor(
-                fragment_tree=fragment_tree,
-                precursor_type=precursor_type,
-            )
-            self.assertTrue(len(precursor_pathways) > 0, "Precursor pathways should not be empty")
-
-            # Convert to string and parse back
-            precursor_pathway_str = fragmenter.list_to_str(precursor_pathways)
-            precursor_parsed = fragmenter.parse_list(precursor_pathway_str)
-            self.assertEqual(len(precursor_pathways), len(precursor_parsed))
+            self.assertIsNotNone(h_fragment_tree)
+            self.assertEqual(h_fragment_tree.smiles, compound.smiles)
 
             # --- Peak-level pathways ---
+            mass_tolerance = SwitchingWithinTolerance(mode="ppm", tolerance=0.01, da_within=0.01, ppm_within=10.0, switch_mass=500.0)
             peaks_mz = [mz for mz, intensity in peaks]
             fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
-                fragment_tree=fragment_tree,
+                h_fragment_tree=h_fragment_tree,
                 precursor_type=precursor_type,
                 peaks_mz=peaks_mz,
-                mass_tolerance=DaTolerance(0.01),
+                mass_tolerance=mass_tolerance,
             )
             self.assertEqual(len(fragment_pathways_by_peak), len(peaks_mz))
 
             # For each peak, validate that parsing works
-            for fp_list in fragment_pathways_by_peak:
-                if len(fp_list) == 0:
+            for fp_group in fragment_pathways_by_peak:
+                if len(fp_group) == 0:
                     continue
 
-                fp_str = fragmenter.list_to_str(fp_list)
-                fp_parsed = fragmenter.parse_list(fp_str)
-                self.assertEqual(len(fp_list), len(fp_parsed))
-
-            # If all passes
-            print("✓ precursor pathway test passed")
+                fp_group_str = str(fp_group)
+                fp_parsed = fragmenter.parse_fragment_pathway_group(fp_group_str)
+                self.assertEqual(len(fp_group), len(fp_parsed))

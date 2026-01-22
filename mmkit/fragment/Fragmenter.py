@@ -1,5 +1,5 @@
 import os
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Set, Union
 from collections import defaultdict
 from dataclasses import dataclass
 import time
@@ -8,47 +8,97 @@ from rdkit import Chem
 import yaml
 import re
 from pathlib import Path
+import itertools
 
 from .CleavagePattern import CleavagePattern
-from .CleavagePatternLibrary import CleavagePatternLibrary
+from .CleavagePatternSet import CleavagePatternSet
+from .HydrogenRearrangement import HydrogenRearrangement
 from .FragmentTree import FragmentTree, FragmentNode, FragmentEdge
-from ..mass.constants import IonMode
+from .HydrogenRearrangedFragmentTree import HydrogenRearrangedFragmentTree
+from .FragmentTreeBuilder import FragmentTreeBuilder
+from ..mass.constants import *
 from ..chem.Compound import Compound, Formula
+from ..chem.formula_utils import assign_formulas_to_peaks
 from .FragmentResult import FragmentResult
-from .FragmentPathway import FragmentStep, AdductedFragmentPathway
-from ..mass.Adduct import Adduct
+from .FragmentPathway import *
+from ..mass.Adduct import Adduct, split_adduct_components
 from ..mass.Tolerance import MassTolerance
 
 class Fragmenter:
+    SUPPORTED_ADDUCT_TYPES: Tuple[Adduct, ...] = (
+        Adduct.parse("[M+H]+"),
+        Adduct.parse("[M+NH4]+"),
+        Adduct.parse("[M+Na]+"),
+    )
     def __init__(
             self,
-            max_depth: int,
+            ion_mode: IonMode,
+            fragment_tree_builder: FragmentTreeBuilder,
             adduct_types: Tuple[Adduct],
-            cleavage_pattern_lib: CleavagePatternLibrary,
-            only_add_min_depth: bool = True
+            hydrogen_rearrangement: HydrogenRearrangement,
             ):
-        self.max_depth = max_depth
-        self.adduct_types = adduct_types
-        self.cleavage_pattern_lib = cleavage_pattern_lib
-        self.only_add_min_depth = only_add_min_depth
+        
+        if not isinstance(ion_mode, IonMode):
+            ion_mode = parse_ion_mode(str(ion_mode))
+
+        assert isinstance(fragment_tree_builder, FragmentTreeBuilder), "fragment_tree_builder must be an instance of FragmentTreeBuilder"
+
+        # ---- adduct validation ----
+        adduct_types = tuple(ad if isinstance(ad, Adduct) else Adduct.parse(ad) for ad in adduct_types)
+        unsupported = [
+            adduct for adduct in adduct_types
+            if adduct not in self.SUPPORTED_ADDUCT_TYPES
+        ]
+        if unsupported:
+            raise ValueError(
+                f"Unsupported adduct types: {unsupported}. "
+                f"Supported adducts are: {self.SUPPORTED_ADDUCT_TYPES}"
+            )
+        
+        assert isinstance(hydrogen_rearrangement, HydrogenRearrangement), "hydrogen_rearrangement must be an instance of HydrogenRearrangement"
+    
+        self._ion_mode = ion_mode
+        self._adduct_types = adduct_types
+        self._fragment_tree_builder = fragment_tree_builder
+        self._hydrogen_rearrangement = hydrogen_rearrangement
 
     @property
-    def patterns(self) -> List[CleavagePattern]:
-        return self.cleavage_pattern_lib.patterns
+    def ion_mode(self) -> IonMode:
+        return self._ion_mode
+    
+    @property
+    def adduct_types(self) -> Tuple[Adduct]:
+        return tuple(self._adduct_types)
+
+    @property
+    def hydrogen_rearrangement(self) -> HydrogenRearrangement:
+        return self._hydrogen_rearrangement.copy()
+
+    @property
+    def tree_max_depth(self) -> int:
+        return self._fragment_tree_builder.max_depth    
+    
+    @property
+    def cleavage_pattern_set(self) -> CleavagePatternSet:
+        return self._fragment_tree_builder.cleavage_pattern_set.copy()
+
+    @property
+    def cleavage_patterns(self) -> List[CleavagePattern]:
+        return list(self._fragment_tree_builder.cleavage_pattern_set.patterns)
     
     @property
     def name(self) -> str:
-        return self.cleavage_pattern_lib.name
+        return self._fragment_tree_builder.cleavage_pattern_set.name
 
     def to_dict(self) -> Dict[str, str]:
         """
         Convert this Fragmenter instance into a serializable dictionary.
         """
         return {
-            "max_depth": self.max_depth,
-            "adduct_types": [str(adduct) for adduct in self.adduct_types],
-            "cleavage_pattern_lib": self.cleavage_pattern_lib.to_dict(),
-            "only_add_min_depth": self.only_add_min_depth
+            "ion_mode": self._ion_mode.value,
+            "fragment_tree_builder": self._fragment_tree_builder.to_dict(),
+            "adduct_types": [str(adduct) for adduct in self._adduct_types],
+            "hydrogen_rearrangement": self._hydrogen_rearrangement.to_dict(),
         }
 
     @classmethod
@@ -56,15 +106,17 @@ class Fragmenter:
         """
         Reconstruct a Fragmenter instance from a dictionary.
         """
-        max_depth = int(data.get("max_depth", 1))
-        adduct_types = tuple(Adduct.parse(adduct_str) for adduct_str in data.get("adduct_types", []))
-        cleavage_pattern_lib = CleavagePatternLibrary.from_dict(
-            data.get("cleavage_pattern_lib", {})
+        ion_mode = parse_ion_mode(data["ion_mode"])
+        fragment_tree_builder = FragmentTreeBuilder.from_dict(
+            data.get("fragment_tree_builder", {})
         )
-        only_add_min_depth = bool(data.get("only_add_min_depth", False))
-        return cls(max_depth=max_depth, adduct_types=adduct_types, cleavage_pattern_lib=cleavage_pattern_lib, only_add_min_depth=only_add_min_depth)
+        adduct_types = tuple(Adduct.parse(adduct_str) for adduct_str in data.get("adduct_types", []))
+        hydrogen_rearrangement = HydrogenRearrangement.from_dict(
+            data.get("hydrogen_rearrangement", {})
+        )
+        return cls(ion_mode=ion_mode, fragment_tree_builder=fragment_tree_builder, adduct_types=adduct_types, hydrogen_rearrangement=hydrogen_rearrangement)
 
-    def save_yaml(self, path: str):
+    def to_yaml(self, path: str):
         """Save the library to a YAML file."""
         os.makedirs(os.path.dirname(path), exist_ok=True) 
         with open(path, "w", encoding="utf-8") as f:
@@ -77,170 +129,122 @@ class Fragmenter:
             )
 
     @classmethod
-    def load_yaml(cls, path: str) -> "Fragmenter":
+    def from_yaml(cls, path: str) -> "Fragmenter":
         """Load a library from a YAML file."""
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls.from_dict(data)
     
-
     def cleave_all(self, compound: Compound) -> Tuple[FragmentResult]:
-        fragment_group = []
-        for pattern in self.cleavage_pattern_lib.patterns:
-            fragment_result = pattern.fragment(compound)
-            if fragment_result is not None and len(fragment_result.products) > 0:
-                fragment_group.append(fragment_result)
-
-        return tuple(fragment_group)
+        return self._fragment_tree_builder.cleave_all(compound)
 
     def create_fragment_tree(
             self, 
             compound: Compound, 
-            ion_mode: IonMode,
-            timeout_seconds: float = float('inf')
+            timeout_seconds: float = float('inf'),
+            print_info: bool = False,
             ) -> FragmentTree:
-        
-        if ion_mode == IonMode.POSITIVE:
-            pass
-        else:
-            raise NotImplementedError("Only positive ion mode is currently supported.")
-                        
-        start_time = time.time()
-
-        def check_timeout():
-            if (time.time() - start_time) > timeout_seconds:
-                raise TimeoutError("Fragmentation process timed out.")
-
-        nodes: Dict[int, FragmentNode] = {}
-        edges: Dict[Tuple[int, int], FragmentEdge] = {}
-        smi_to_node_id: Dict[str, int] = {}
-        processed_node_ids = set()
-        node_depths = {}
-
-
-        def get_set_node_idx(smiles:str, depth:int) -> int:
-            if smiles in smi_to_node_id:
-                return smi_to_node_id[smiles]
-            else:
-                node_idx = len(nodes)
-                nodes[node_idx] = FragmentNode(node_idx, smiles)
-                smi_to_node_id[smiles] = node_idx
-                node_depths[node_idx] = depth
-            return node_idx
-        
-        def get_set_edge_idx(
-                source_node_idx:int,
-                target_node_idx:int,
-                fragment_step_str:str,
-                depth:int,
-                ) -> int:
-            edge_key = (source_node_idx, target_node_idx)
-            if self.only_add_min_depth and depth > node_depths[target_node_idx]:
-                return -1
-            
-            if edge_key in edges:
-                edges[edge_key].try_add_fragment_step(fragment_step_str)
-                return edge_key
-            else:
-                edges[edge_key] = FragmentEdge(
-                    source_node_idx,
-                    target_node_idx,
-                    (fragment_step_str,)
-                )
-            nodes[source_node_idx].add_child(target_node_idx)
-            nodes[target_node_idx].add_parent(source_node_idx)
-
-            return edge_key
-
-        def add_data(
-                source_smiles:str,
-                target_smiles:str,
-                fragment_step_str:str,
-                depth:int,
-                ) -> Tuple[int, int, int]:
-            src_node_idx = get_set_node_idx(source_smiles, depth=depth)
-            tgt_node_idx = get_set_node_idx(target_smiles, depth=depth)
-
-            edge_idx = get_set_edge_idx(
-                src_node_idx,
-                tgt_node_idx,
-                fragment_step_str,
-                depth=depth,
-            )
-            return src_node_idx, tgt_node_idx, edge_idx
-            
-            
-        root_compound = compound.copy()
-        node_idx = get_set_node_idx(root_compound.smiles, depth=0)
-
-        next_node_ids = [node_idx]
-        for depth in range(1, self.max_depth + 1):
-            if len(next_node_ids) == 0:
-                break
-            check_timeout()
-
-            new_node_ids = set()
-            for node_idx in next_node_ids:
-                source_smiles = nodes[node_idx].smiles
-                compound = Compound.from_smiles(source_smiles)
-                frag_group = self.cleave_all(compound)
-                for frag_result in frag_group:
-                    for frag_product in frag_result.products:
-                        target_smiles = frag_product.smiles
-                        fragment_step = FragmentStep(
-                            cleavage_pattern=frag_result.cleavage,
-                            react_indices=frag_product.reactant_indices,
-                            prod_indices=frag_product.product_indices,
-                        )
-                        fragment_step_str = str(fragment_step)
-                        # product_mapping = CleavagePattern.parse_product_mapping_str(product_mapping_str)
-                        src_node_idx, tgt_node_idx, edge_idx = add_data(
-                            source_smiles,
-                            target_smiles,
-                            fragment_step_str,
-                            depth=depth,
-                        )
-                        new_node_ids.add(tgt_node_idx)
-                processed_node_ids.add(node_idx)
-            next_node_ids = new_node_ids - processed_node_ids
-                
-        
-        fragment_tree = FragmentTree(compound=root_compound, nodes=nodes, edges=edges)
+        fragment_tree = self._fragment_tree_builder.create_fragment_tree(
+            compound,
+            timeout_seconds=timeout_seconds,
+            print_info=print_info,
+        )
         return fragment_tree
     
-    def build_fragment_pathways_for_precursor(
+    def assign_hydrogen_rearrangements_to_fragment_tree(
             self,
             fragment_tree: FragmentTree,
-            precursor_type: Adduct,
-    ) -> List['AdductedFragmentPathway']:
-        fragment_pathways = AdductedFragmentPathway.build_pathways_for_precursor(
-            fragment_tree=fragment_tree,
-            precursor_type=precursor_type,
-            supported_adduct_types=self.adduct_types,
-        )
-        return fragment_pathways
+    ) -> 'HydrogenRearrangedFragmentTree':
+        return HydrogenRearrangedFragmentTree.from_hydrogen_rearrangement_rules(fragment_tree, self._hydrogen_rearrangement)
     
+    def create_hydrogen_rearranged_fragment_tree(
+            self, 
+            compound: Compound, 
+            timeout_seconds: float = float('inf'),
+            print_info: bool = False,
+            ) -> 'HydrogenRearrangedFragmentTree':
+        fragment_tree = self.create_fragment_tree(
+            compound,
+            timeout_seconds=timeout_seconds,
+            print_info=print_info,
+        )
+        return self.assign_hydrogen_rearrangements_to_fragment_tree(fragment_tree)
+
     def build_fragment_pathways_by_peak(
             self,
-            fragment_tree: FragmentTree,
+            h_fragment_tree: HydrogenRearrangedFragmentTree,
             precursor_type: Adduct,
             peaks_mz: List[float],
             mass_tolerance: MassTolerance,
-    ) -> List[List['AdductedFragmentPathway']]:
-        fragment_pathways_by_peak = AdductedFragmentPathway.build_pathways_by_peak(
-            fragment_tree=fragment_tree,
-            precursor_type=precursor_type,
-            supported_adduct_types=self.adduct_types,
+    ) -> List[FragmentPathwayGroup]:
+        precursor_type_charge = precursor_type.charge
+        ion_adduct_strs: Set[str] = set()
+        if precursor_type_charge == 1:
+            plus_h_adduct = Adduct.parse("[M+H]+")
+            normal_adduct: Adduct = Adduct.parse("[M]+")
+            minus_h_adduct: Adduct = Adduct.parse("[M-H]+")
+            ion_adduct_strs.add(str(plus_h_adduct))
+        else:
+            raise NotImplementedError("Currently only singly charged precursor adducts are supported.")
+        
+        adduct_composition, neutral_component_adduct = split_adduct_components(precursor_type, reference_adducts=self.adduct_types)
+        assert len(adduct_composition) == 1, "Precursor adduct must contain only one adduct component."
+        adduct_type = next(iter(adduct_composition))
+        assert adduct_composition[adduct_type] == 1, "Precursor adduct must contain only one adduct component."
+        ion_adduct_strs.add(str(adduct_type))
+
+        ion_adducts: Set[Adduct] = {Adduct.parse(adduct_str) for adduct_str in ion_adduct_strs}
+
+        formula_to_node_candidates: Dict[Formula, List[Tuple[int, Compound, Adduct, Formula]]] = defaultdict(list)
+        for node_index in range(h_fragment_tree.num_nodes):
+            node = h_fragment_tree.tree.get_node(node_index)
+
+            ion_adducts: List[Adduct] = []
+            neutral_adducts = h_fragment_tree.neutral_rule_bundle.node_adduct_candidates(node_index)
+            if precursor_type_charge == 1:
+                ion_hs_candidates = h_fragment_tree.ion_rule_bundle.node_candidates(node_index)
+                if 1 in ion_hs_candidates or node_index == 0:
+                    ion_adducts.append(plus_h_adduct)
+                if 0 in ion_hs_candidates:
+                    ion_adducts.append(normal_adduct)
+                if -1 in ion_hs_candidates:
+                    ion_adducts.append(minus_h_adduct)
+                if {1, 0, -1}.issubset(ion_hs_candidates):
+                    raise ValueError("Inconsistent hydrogen rearrangement assignments detected.")
+            else:
+                raise NotImplementedError("Currently only singly charged precursor adducts are supported.")
+ 
+            adduct_pairs = [ion_adduct+neutral_adduct for ion_adduct, neutral_adduct in itertools.product(ion_adducts, neutral_adducts)]
+            compound = Compound.from_smiles(node.smiles)
+            f = compound.formula
+            for a in adduct_pairs:
+                af = a.calc_formula(f)
+                formula_to_node_candidates[af.normalized].append((node_index, compound, a, af))
+
+        precursor_compound = Compound.from_smiles(h_fragment_tree.tree.smiles)
+        precursor_formula = precursor_type.calc_formula(precursor_compound.formula).normalized
+            
+        formula_candidates = [f for f in formula_to_node_candidates.keys()]
+        assigned_peaks = assign_formulas_to_peaks(
             peaks_mz=peaks_mz,
+            formula_candidates=formula_candidates,
             mass_tolerance=mass_tolerance,
         )
+        fragment_pathways_by_peak: List[FragmentPathwayGroup] = [FragmentPathwayGroup.from_list([]) for _ in peaks_mz]
+        for i, info in enumerate(assigned_peaks):
+            fragment_pathways = []
+            if info['n_matches'] > 0:
+                for formula_str, mass_error in zip(info['matched_formulas'], info['mass_errors']):
+                    formula = Formula.parse(formula_str, store_raw=False)
+                    pathway_terminal_candidates = formula_to_node_candidates[formula]
+                    for node_index, compound, adduct_type, adducted_formula in pathway_terminal_candidates:
+                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, precursor_formula, adduct_type)
+                        fragment_pathways.extend(pathways)
+            fragment_pathways_by_peak[i] = FragmentPathwayGroup.from_list(fragment_pathways)
         return fragment_pathways_by_peak
     
-    def list_to_str(self, fragment_pathways: List['AdductedFragmentPathway']) -> str:
-        return AdductedFragmentPathway.list_to_str(fragment_pathways)
-    
-    def parse_list(self, fragment_pathways_str: str) -> List['AdductedFragmentPathway']:
-        return AdductedFragmentPathway.parse_list(fragment_pathways_str)
+    def parse_fragment_pathway_group(self, fragment_pathway_group_str: str) -> 'FragmentPathwayGroup':
+        return FragmentPathwayGroup.parse(fragment_pathway_group_str)
 
     def copy(self) -> 'Fragmenter':
         """
@@ -250,9 +254,10 @@ class Fragmenter:
             Fragmenter: A new instance with the same adduct_types and max_depth.
         """
         return Fragmenter(
-            max_depth=self.max_depth,
-            cleavage_pattern_lib=self.cleavage_pattern_lib,
-            only_add_min_depth=self.only_add_min_depth
+            ion_mode=self._ion_mode,
+            fragment_tree_builder=self._fragment_tree_builder.copy(),
+            adduct_types=self._adduct_types,
+            hydrogen_rearrangement=self._hydrogen_rearrangement.copy(),
         )
     
 

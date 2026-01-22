@@ -1,0 +1,15 @@
+version: 1.0
+ion_hydrogen_shift:
+  plus_h_atoms:
+  - N
+  - O
+  - P
+  - S
+  minus_h_atoms:
+  - C
+  - P
+  - S
+radical:
+  max_count: 1
+bond_unsaturation:
+  max_count: 2

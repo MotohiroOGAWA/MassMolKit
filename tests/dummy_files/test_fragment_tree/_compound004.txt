@@ -1,0 +1,24 @@
+Name: Nerylgeraniol-18-oic acid
+PrecursorMZ: 303.2319
+AdductType: [M+H-H2O]+
+IonMode: Positive
+Formula: C20H32O3
+SMILES: CC(C)=CCC/C(=C\CC/C(C)=C/CC/C(C)=C/CO)C(=O)O
+InChIKey: USXGDFAHMRCBBX-PFZXPCEQSA-N
+InstrumentType: HCD
+CollisionEnergy: NCE=15% 9eV
+COMMENT: NIST Mass Spectrometry Data Center
+SpecID: NIST23_975109
+FragmentPathwayCov: 0.9038808656480073
+PrecursorFragmentPathway: [[p"CC(C)=CCC/C(=C\CC/C(C)=C/CC/C(C)=C/CO)C(=O)O",[([18,19],[0],(CleavagePattern;v=1.0;smirks="[C:1]-!@[!#1:2]>>[C+:1]";name="";charge_mode="positive1"))],"[CH2+]/C=C(\C)CC/C=C(\C)CC/C=C(\CCC=C(C)C)C(=O)O"]|"C20H31O2+"|"[M]+", [p"CC(C)=CCC/C(=C\CC/C(C)=C/CC/C(C)=C/CO)C(=O)O",[([20,22],[7],(CleavagePattern;v=1.0;smirks="[C:1]-!@[!#1:2]>>[C+:1]";name="";charge_mode="positive1"))],"CC(C)=CCC/C([C+]=O)=C\CC/C(C)=C/CC/C(C)=C/CO"]|"C20H31O2+"|"[M]+"]
+NumPeaks: 9
+mz	intensity	FragmentPathway
+161.1322021484375	3.299999952316284
+233.1531982421875	3.799999952316284
+247.16879272460938	5.5
+257.22589111328125	24.299999237060547
+275.2362976074219	2.5	"[[p"CC(C)=CCC/C(=C\CC/C(C)=C/CC/C(C)=C/CO)C(=O)O",[([6,20],[6],(CleavagePattern;v=1.0;smirks="[C:1]-!@[!#1:2]>>[C+:1]";name="";charge_mode="positive1"))],"CC(C)=CCC/[C+]=C\CC/C(C)=C/CC/C(C)=C/CO"]|"C19H31O+"|"[M]+"]"
+285.1842956542969	2.0999999046325684
+285.22088623046875	21.100000381469727
+303.19769287109375	46.400001525878906
+303.2314147949219	999.0	"[[p"CC(C)=CCC/C(=C\CC/C(C)=C/CC/C(C)=C/CO)C(=O)O",[([18,19],[0],(CleavagePattern;v=1.0;smirks="[C:1]-!@[!#1:2]>>[C+:1]";name="";charge_mode="positive1"))],"[CH2+]/C=C(\C)CC/C=C(\C)CC/C=C(\CCC=C(C)C)C(=O)O"]|"C20H31O2+"|"[M]+", [p"CC(C)=CCC/C(=C\CC/C(C)=C/CC/C(C)=C/CO)C(=O)O",[([20,22],[7],(CleavagePattern;v=1.0;smirks="[C:1]-!@[!#1:2]>>[C+:1]";name="";charge_mode="positive1"))],"CC(C)=CCC/C([C+]=O)=C\CC/C(C)=C/CC/C(C)=C/CO"]|"C20H31O2+"|"[M]+"]"

@@ -42,7 +42,7 @@ class CleavagePattern:
 
         # --- Basic validation (only single-reactant/product reactions are supported)
         assert len(self.rxn.GetReactants()) == 1, "Only single-reactant patterns are supported."
-        assert len(self.rxn.GetProducts()) == 1, "Only single-product patterns are supported."
+        assert len(self.rxn.GetProducts()) == 1, "Only single-reactant patterns are supported."
 
         # --- Initialize reactant and product templates
         self.react_temp = self.rxn.GetReactants()[0]
@@ -67,7 +67,7 @@ class CleavagePattern:
         pass
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(name='{self.name}', smirks='{self.smirks}')"
+        return f"{self.__class__.__name__}(name='{self.name}', smirks='{self.smirks}', charge_mode='{self.charge_mode}')"
     
     def key(self, include_name: bool = False) -> Tuple:
         """

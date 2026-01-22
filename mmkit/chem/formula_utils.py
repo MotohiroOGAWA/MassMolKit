@@ -76,7 +76,7 @@ def get_possible_sub_formulas(formula: Formula, hydrogen_delta: int = 0, timeout
         for elements, dbe in enumerate_possible_sub_formulas(formula.elements, timeout=timeout)
     ]
 
-    res = sorted(res, key=lambda f: (f.exact_mass, f.plain))
+    res = sorted(res, key=lambda f: (f.exact_mass, str(f.plain_value)))
 
     return res
     

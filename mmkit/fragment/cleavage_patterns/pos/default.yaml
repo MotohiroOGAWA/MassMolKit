@@ -1,0 +1,7 @@
+library_name: positive_default
+version: 1.0
+patterns:
+  - smirks: "[!#1:1]-!@[!#1:2]>>[!#1:1][H]"
+    name: ""
+    charge_mode: any
+    version: 1.0

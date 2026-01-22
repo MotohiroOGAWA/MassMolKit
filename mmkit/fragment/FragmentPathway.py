@@ -1,36 +1,57 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Sequence, Optional, Iterator
+from dataclasses import dataclass, field
 import json
 import re
 
 from .CleavagePattern import CleavagePattern
-from .FragmentTree import FragmentTree, FragmentEdge
+from .FragmentTree import FragmentTree, FragmentEdge, FragmentNode
+from .HydrogenRearrangedFragmentTree import HydrogenRearrangedFragmentTree
 from ..chem.Formula import Formula
 from ..chem.formula_utils import assign_formulas_to_peaks
 from ..mass.Tolerance import MassTolerance
 from ..mass.Adduct import Adduct, split_adduct_components
 from ..chem.Compound import Compound
 
-class AdductedFragmentPathway:
-    def __init__(self, fragment_pathway: 'FragmentPathway', formula: Formula, adduct: Adduct):
-        self.pathway = fragment_pathway
-        self.formula = formula
-        self.adduct = adduct
 
+@dataclass(frozen=True)
+class FragmentPathwayGroup:
+    """
+    A container for multiple FragmentPathway objects.
+    """
+    pathways: Tuple['FragmentPathway', ...]
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.pathways, tuple), "pathways must be a tuple"
+        for p in self.pathways:
+            assert isinstance(p, FragmentPathway), f"All items must be FragmentPathway, got {type(p)}"
+    
+    @staticmethod
+    def from_list(
+        pathways: Sequence['FragmentPathway'],
+    ) -> "FragmentPathwayGroup":
+        """Create a group from a list (or any sequence) of FragmentPathway."""
+        return FragmentPathwayGroup(pathways=tuple(pathways))
+
+    def __len__(self) -> int:
+        return len(self.pathways)
+
+    def __iter__(self) -> Iterator['FragmentPathway']:
+        return iter(self.pathways)
+
+    def __getitem__(self, idx: int) -> 'FragmentPathway':
+        return self.pathways[idx]
+
+    def __repr__(self) -> str:
+        return f"FragmentPathwayGroup(pathways={len(self)})"
+    
     def __str__(self):
-        return f"{str(self.pathway)}|{str(self.formula)}|{str(self.adduct)}"
-    
-    def __repr__(self):
-        return f"AdductedFragmentPathway(fragment_pathway={repr(self.pathway)}, formula={repr(self.formula)}, adduct={repr(self.adduct)})"
+        pathway_strs = []
+        for fp in self.pathways:
+            pathway_strs.append(f'{str(fp)}|"{str(fp.formula)}"|"{str(fp.adduct)}"')
+        return '[' + ", ".join(pathway_strs) + ']'
 
     @staticmethod
-    def list_to_str(fragment_pathways: List['AdductedFragmentPathway']) -> str:
-        pathway_strs = []
-        for fragment_pathway in fragment_pathways:
-            pathway_strs.append(f'{str(fragment_pathway.pathway)}|"{str(fragment_pathway.formula)}"|"{str(fragment_pathway.adduct)}"')
-        return '[' + ", ".join(pathway_strs) + ']'
-    
-    @staticmethod
-    def parse_list(pathway_string: str) -> List['AdductedFragmentPathway']:
+    def parse(pathway_string: str) -> 'FragmentPathwayGroup':
         # Parse a serialized fragment pathway string into AdductedFragmentPathway objects.
 
         # --------------------------------------------------------------
@@ -139,7 +160,7 @@ class AdductedFragmentPathway:
         # --------------------------------------------------------------
         # Step 4: Parse the main pathway structure and adducts
         # --------------------------------------------------------------
-        parsed_pathways = []
+        parsed_pathways: List[FragmentPathway] = []
         text_index = 0
         next_edge_group_idx = 0
         depth_level = 0
@@ -214,7 +235,7 @@ class AdductedFragmentPathway:
                                 raw_fragment = raw_fragment.strip()[1:].strip()
                                 is_precursor = True
                             restored_smiles = unmask_quoted_text(raw_fragment, token_map).strip().replace('"', '')
-                            parsed_items.append(FragmentPathwayNode(Compound.from_smiles(restored_smiles), is_precursor=is_precursor))
+                            parsed_items.append(FragmentPathwayNode(restored_smiles, is_precursor=is_precursor))
                         text_index = end_idx
 
                     elif next_closing != -1 and (next_comma == -1 or next_closing < next_comma):
@@ -263,8 +284,8 @@ class AdductedFragmentPathway:
                 adduct_str = unmask_quoted_text(adduct_str, token_map).strip().replace('"', '')
                 adduct = Adduct.parse(adduct_str)
 
-                fragment_pathway = FragmentPathway(parsed_items)
-                parsed_pathways.append(AdductedFragmentPathway(fragment_pathway, formula, adduct))
+                fragment_pathway = FragmentPathway(tuple(parsed_items), adduct=adduct)
+                parsed_pathways.append(fragment_pathway)
 
                 depth_level -= 1
                 text_index = formula_and_adduct_end_idx
@@ -272,136 +293,25 @@ class AdductedFragmentPathway:
             text_index += 1
 
         # --------------------------------------------------------------
-        # Step 5: Return all parsed AdductedFragmentPathway objects
+        # Step 5: Return all parsed FragmentPathwayG
         # --------------------------------------------------------------
-        return parsed_pathways
-    
-    @staticmethod
-    def build_pathways_for_precursor(
-        fragment_tree: FragmentTree, 
-        precursor_type: Adduct,
-        supported_adduct_types:Tuple[Adduct],
-    ) -> List['AdductedFragmentPathway']:
-        all_formulas_with_node_id = fragment_tree.get_all_formulas_with_node_id(precursor_type, supported_adduct_types=supported_adduct_types)
-        precursor_formula = precursor_type.calc_formula(fragment_tree.compound.formula)
+        return FragmentPathwayGroup.from_list(parsed_pathways)
 
-        adducted_precursor_pathways: List[AdductedFragmentPathway] = []
-        if precursor_formula not in all_formulas_with_node_id:
-            return adducted_precursor_pathways
-        
-        formula_with_node_id = all_formulas_with_node_id[precursor_formula]
-        for adduct_formula_pair, node_indices in formula_with_node_id.items():
-            frag_formula, adduct = adduct_formula_pair
-            for node_id in node_indices:
-                pathways = AdductedFragmentPathway.build_pathways_for_node(fragment_tree, node_id, precursor_formula, precursor_type)
-                adducted_pathways = [AdductedFragmentPathway(p, frag_formula, adduct) for p in pathways]
-                adducted_precursor_pathways.extend(adducted_pathways)
-        return adducted_precursor_pathways
-    
-    @staticmethod
-    def build_pathways_by_peak(
-        fragment_tree: FragmentTree, 
-        precursor_type: Adduct,
-        supported_adduct_types:Tuple[Adduct],
-        peaks_mz:List[float], 
-        mass_tolerance:MassTolerance,
-        ) -> List[List['AdductedFragmentPathway']]:
-        all_formulas_with_node_id = fragment_tree.get_all_formulas_with_node_id(precursor_type, supported_adduct_types=supported_adduct_types)
-        formula_candidates = [f for f in all_formulas_with_node_id.keys()]
-        assigned_peaks = assign_formulas_to_peaks(
-            peaks_mz=peaks_mz,
-            formula_candidates=formula_candidates,
-            mass_tolerance=mass_tolerance,
-        )
-        precursor_formula = precursor_type.calc_formula(fragment_tree.compound.formula)
-
-        adduct_composition, neutral_component_adduct = split_adduct_components(precursor_type, reference_adducts=supported_adduct_types)
-        assert len(adduct_composition) == 1, "Precursor adduct must contain only one adduct component."
-        adduct_type = next(iter(adduct_composition))
-        assert adduct_composition[adduct_type] == 1, "Precursor adduct must contain only one adduct component."
-
-        adducted_fragment_pathways_by_peak: List[List[AdductedFragmentPathway]] = []
-        for i, info in enumerate(assigned_peaks):
-            adducted_fragment_pathways = []
-            if info['n_matches'] > 0:
-                for formula_str, mass_error in zip(info['matched_formulas'], info['mass_errors']):
-                    formula = Formula.parse(formula_str, store_raw=False)
-                    formula_with_node_id = all_formulas_with_node_id[formula]
-                    for adduct_formula_pair, node_indices in formula_with_node_id.items():
-                        frag_formula, adduct = adduct_formula_pair
-                        for node_id in node_indices:
-                            pathways = AdductedFragmentPathway.build_pathways_for_node(fragment_tree, node_id, precursor_formula, adduct_type)
-                            adducted_pathways = [AdductedFragmentPathway(p, frag_formula, adduct) for p in pathways]
-                            adducted_fragment_pathways.extend(adducted_pathways)
-            adducted_fragment_pathways_by_peak.append(adducted_fragment_pathways)
-        return adducted_fragment_pathways_by_peak
-
-    @staticmethod
-    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, precursor_formula: Formula, adduct_type: Adduct) -> List['FragmentPathway']:
-        path = AdductedFragmentPathway._collect_path_to_root(fragment_tree, node_id)
-        fragment_pathways: List[FragmentPathway] = []
-        for p in path:
-            tmp_path = []
-            for i in range(len(p)):
-                if i % 2 == 0:
-                    compound = Compound.from_smiles(p[i])
-                    if str(precursor_formula) == str(adduct_type.calc_formula(compound.formula)):
-                        is_precursor = True
-                    else:
-                        is_precursor = False
-                    tmp_path.append(FragmentPathwayNode(Compound.from_smiles(p[i]), is_precursor=is_precursor))
-                else:
-                    edge_str = p[i]
-                    fragment_edge = FragmentEdge.parse(edge_str)
-                    cleavage_records = fragment_edge.fragment_step_strs
-                    fragment_steps = [FragmentStep.parse(record_str) for record_str in cleavage_records]
-                    fragment_pathway_edge = FragmentPathwayEdge(fragment_steps)
-                    tmp_path.append(fragment_pathway_edge)
-            fragment_pathways.append(FragmentPathway(tmp_path))
-        return fragment_pathways
-
-    @staticmethod
-    def _collect_path_to_root(tree:FragmentTree, node_id: int) -> List[List[str]]:
-        """
-        Recursively collect all possible paths (as lists of str(node) and str(edge))
-        from the given node up to the root.
-        Returns:
-            A list of paths, each path being a list of strings ordered from root → current node.
-        """
-        node = tree.nodes[node_id]
-
-        # Base case: node has no parents (root)
-        if not node.parent_ids:
-            return [[node.smiles]]
-
-        all_paths: List[List[str]] = []
-
-        # Explore all parent nodes
-        for parent_id in node.parent_ids:
-            edge = tree.edges[(parent_id, node_id)]
-
-            # Recursively collect paths from this parent
-            parent_paths = AdductedFragmentPathway._collect_path_to_root(tree, parent_id)
-
-            # Append the current edge and node to each parent path
-            for path in parent_paths:
-                extended_path = path.copy()
-                extended_path.append(str(edge))
-                extended_path.append(node.smiles)
-                all_paths.append(extended_path)
-
-        return all_paths
-
-
+@dataclass(frozen=True)
 class FragmentPathway:
-    def __init__(self, path: List[Union['FragmentPathwayNode', 'FragmentPathwayEdge']]):
-        for i in range(len(path)):
-            if i % 2 == 0:
-                assert isinstance(path[i], FragmentPathwayNode), f"Expected FragmentPathwayNode at position {i}, got {type(path[i])}"
-            else:
-                assert isinstance(path[i], FragmentPathwayEdge), f"Expected FragmentPathwayEdge at position {i}, got {type(path[i])}"
-        self.path = path
+    path: Tuple[Union['FragmentPathwayNode', 'FragmentPathwayEdge']]
+    adduct: Adduct
+    _formula: Optional[Formula] = field(default=None, init=False, repr=False)
 
+    def __post_init__(self) -> None:
+        assert isinstance(self.path, tuple), "path must be a tuple"
+        assert len(self.path) % 2 == 1, "FragmentPathway path must have an odd number of elements (nodes and edges alternating)."
+        for i in range(len(self.path)):
+            if i % 2 == 0:
+                assert isinstance(self.path[i], FragmentPathwayNode), f"Expected FragmentPathwayNode at position {i}, got {type(self.path[i])}"
+            else:
+                assert isinstance(self.path[i], FragmentPathwayEdge), f"Expected FragmentPathwayEdge at position {i}, got {type(self.path[i])}"        
+        
     def __str__(self):
         pathway_strs = [str(p) for p in self.path]
         return f"[" + ",".join(pathway_strs) + "]"
@@ -410,31 +320,126 @@ class FragmentPathway:
         return f"FragmentPathway(path={self.path})"
 
     def get_node(self, index: int) -> 'FragmentPathwayNode':
-        return self.path[index * 2]
+        node: FragmentPathwayNode = None
+        if index >= 0:
+            node = self.path[index * 2]
+        else:
+            node = self.path[len(self.path) + index * 2 + 1]
+        assert isinstance(node, FragmentPathwayNode)
+        return node
     
     def get_edge(self, index: int) -> 'FragmentPathwayEdge':
-        return self.path[index * 2 + 1]
+        edge: FragmentPathwayEdge = None
+        if index >= 0:
+            edge = self.path[index * 2 + 1]
+        else:
+            edge = self.path[len(self.path) + index * 2]
+        assert isinstance(edge, FragmentPathwayEdge)
+        return edge
+
+    @property
+    def smiles(self) -> str:
+        return self.get_node(-1).smiles
+
+    @property
+    def formula(self) -> Formula:
+        """
+        Return the molecular formula of the pathway end fragment
+        after applying the adduct.
+
+        The formula is computed lazily and cached.
+        """
+        if self._formula is None:
+            # Terminal node determines the fragment structure
+            terminal_node = self.get_node(-1)
+            compound = Compound.from_smiles(terminal_node.smiles)
+
+            # Apply adduct to fragment formula
+            computed_formula = self.adduct.calc_formula(compound.formula).normalized
+
+            # Cache the computed formula (allowed via object.__setattr__ even if frozen)
+            object.__setattr__(self, "_formula", computed_formula)
+
+        return self._formula
+
+    @staticmethod
+    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, precursor_formula: Formula, adduct_type: Adduct) -> Tuple['FragmentPathway']:
+        path = FragmentPathway._collect_path_to_root(fragment_tree, node_id)
+        fragment_pathways: List[FragmentPathway] = []
+        for p in path:
+            tmp_path = []
+            for i in range(len(p)):
+                if i % 2 == 0:
+                    compound = Compound.from_smiles(p[i].smiles)
+                    if precursor_formula.normalized.value == adduct_type.calc_formula(compound.formula).normalized.value:
+                        is_precursor = True
+                    else:
+                        is_precursor = False
+                    tmp_path.append(FragmentPathwayNode(p[i].smiles, is_precursor=is_precursor))
+                else:
+                    fragment_edge: FragmentEdge = p[i]
+                    cleavage_records = fragment_edge.fragment_step_strs
+                    fragment_steps = [FragmentStep.parse(record_str) for record_str in cleavage_records]
+                    fragment_pathway_edge = FragmentPathwayEdge(fragment_steps)
+                    tmp_path.append(fragment_pathway_edge)
+            fragment_pathways.append(FragmentPathway(tuple(tmp_path), adduct=adduct_type))
+        return tuple(fragment_pathways)
+
+    @staticmethod
+    def _collect_path_to_root(tree:FragmentTree, node_id: int) -> List[List[Union[FragmentNode, FragmentEdge]]]:
+        """
+        Recursively collect all possible paths (as lists of str(node) and str(edge))
+        from the given node up to the root.
+        Returns:
+            A list of paths, each path being a list of strings ordered from root → current node.
+        """
+        node = tree.get_node(node_id)
+
+        # Base case: node has no parents (root)
+        in_edges = tree.get_in_edges(node_id)
+        if len(in_edges) == 0:
+            return [[node]]
+
+        all_paths: List[List[str]] = []
+        # Explore all parent nodes
+        for in_edge in in_edges:
+            parent_node = tree.get_node(in_edge.source_id)
+
+            # Recursively collect paths from this parent
+            parent_paths = FragmentPathway._collect_path_to_root(tree, parent_node.id)
+
+            # Append the current edge and node to each parent path
+            for path in parent_paths:
+                extended_path = path.copy()
+                extended_path.append(in_edge)
+                extended_path.append(node)
+                all_paths.append(extended_path)
+
+        return all_paths
     
 class FragmentPathwayNode:
-    def __init__(self, compound: Compound, is_precursor: bool):
-        self.compound = compound
+    def __init__(self, smiles: str, is_precursor: bool):
+        assert isinstance(smiles, str), "smiles must be a string"
+        assert isinstance(is_precursor, bool), "is_precursor must be a boolean"
+        self.smiles = smiles
         self.is_precursor = is_precursor
 
     def __repr__(self):
         if self.is_precursor:
-            return f"FragmentPathwayNode(precursor_compound={self.compound})"
+            return f"FragmentPathwayNode(precursor_smiles={self.smiles})"
         else:
-            return f"FragmentPathwayNode(compound={self.compound})"
+            return f"FragmentPathwayNode(smiles={self.smiles})"
 
     def __str__(self):
         if self.is_precursor:
-            return f'p"{self.compound.smiles}"'
+            return f'p"{self.smiles}"'
         else:
-            return f'"{self.compound.smiles}"'
+            return f'"{self.smiles}"'
 
 class FragmentPathwayEdge:
     def __init__(self, fragment_steps: List['FragmentStep']):
         self.fragment_steps = list(set(fragment_steps))
+        assert all(isinstance(step, FragmentStep) for step in self.fragment_steps), "All fragment_steps must be FragmentStep instances."
 
     def __repr__(self):
         return f"FragmentPathwayEdge(fragment_steps={self.fragment_steps})"
@@ -448,6 +453,11 @@ class FragmentStep:
         self.cleavage_pattern = cleavage_pattern
         self.react_indices = react_indices
         self.prod_indices = prod_indices
+
+    def __repr__(self):
+        return (f"FragmentStep(cleavage_pattern={self.cleavage_pattern}, "
+                f"react_indices={self.react_indices}, "
+                f"prod_indices={self.prod_indices})")
 
     def __str__(self):
         react_str = "[" + ",".join(map(str, self.react_indices)) + "]"
