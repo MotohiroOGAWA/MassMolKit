@@ -53,7 +53,10 @@ class FragmentPathwayGroup:
     @staticmethod
     def parse(pathway_string: str) -> 'FragmentPathwayGroup':
         # Parse a serialized fragment pathway string into AdductedFragmentPathway objects.
-
+        if not isinstance(pathway_string, str):
+            raise ValueError("pathway_string must be a string")
+        if pathway_string.strip() == "":
+            return FragmentPathwayGroup.from_list([])
         # --------------------------------------------------------------
         # Helper 1: Replace quoted substrings ("...") with tokens (<MASK_0>, ...)
         # to prevent regex from being confused by commas or brackets inside quotes.
