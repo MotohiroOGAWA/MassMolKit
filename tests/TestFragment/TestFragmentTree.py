@@ -204,7 +204,7 @@ class TestFragmentTree(unittest.TestCase):
             self.assertEqual(h_fragment_tree.smiles, compound.smiles)
 
             # --- Peak-level pathways ---
-            mass_tolerance = SwitchingWithinTolerance(mode="ppm", tolerance=0.01, da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+            mass_tolerance = SwitchingWithinTolerance(mode="ppm", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
             peaks_mz = [mz for mz, intensity in peaks]
             fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
                 h_fragment_tree=h_fragment_tree,
