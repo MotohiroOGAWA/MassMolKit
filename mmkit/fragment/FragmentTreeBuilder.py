@@ -78,9 +78,10 @@ class FragmentTreeBuilder:
         return cls.from_dict(data)
     
 
-    def cleave_all(self, compound: Compound) -> Tuple[FragmentResult]:
+    def cleave_all(self, compound: Compound, check_timeout=lambda: None) -> Tuple[FragmentResult]:
         fragment_group = []
         for pattern in self.cleavage_pattern_set.patterns:
+            check_timeout()
             fragment_result = pattern.fragment(compound)
             if fragment_result is not None and len(fragment_result.products) > 0:
                 fragment_group.append(fragment_result)
@@ -179,7 +180,7 @@ class FragmentTreeBuilder:
             for node_idx in next_node_ids:
                 source_smiles = nodes[node_idx].smiles
                 compound = Compound.from_smiles(source_smiles)
-                frag_group = self.cleave_all(compound)
+                frag_group = self.cleave_all(compound, check_timeout)
                 for frag_result in frag_group:
                     for frag_product in frag_result.products:
                         target_smiles = frag_product.smiles
