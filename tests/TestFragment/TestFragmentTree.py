@@ -13,7 +13,7 @@ from mmkit.mass.Adduct import Adduct
 from mmkit.fragment.FragmentTreeBuilder import FragmentTreeBuilder
 from mmkit.fragment.Fragmenter import Fragmenter
 from mmkit.mass.constants import parse_ion_mode
-from mmkit.mass.Tolerance import PpmTolerance, DaTolerance, SwitchingWithinTolerance
+from mmkit.mass.Tolerance import PpmTolerance, DaTolerance, AnyDaPpmTolerance
 from mmkit.fragment.FragmentPathway import *
 
 
@@ -204,8 +204,9 @@ class TestFragmentTree(unittest.TestCase):
             self.assertEqual(h_fragment_tree.smiles, compound.smiles)
 
             # --- Peak-level pathways ---
-            mass_tolerance = SwitchingWithinTolerance(mode="ppm", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+            mass_tolerance = AnyDaPpmTolerance(mode="ppm", da_tolerance=0.01, ppm_tolerance=10.0)
             peaks_mz = [mz for mz, intensity in peaks]
+            peaks_intensity = [intensity for mz, intensity in peaks]
             fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
                 h_fragment_tree=h_fragment_tree,
                 precursor_type=precursor_type,
@@ -215,10 +216,16 @@ class TestFragmentTree(unittest.TestCase):
             self.assertEqual(len(fragment_pathways_by_peak), len(peaks_mz))
 
             # For each peak, validate that parsing works
-            for fp_group in fragment_pathways_by_peak:
+            sum_intensity = 0.0
+            matched_intensity = 0.0
+            for fp_group, intensity in zip(fragment_pathways_by_peak, peaks_intensity):
+                sum_intensity += intensity
                 if len(fp_group) == 0:
                     continue
+                matched_intensity += intensity
 
                 fp_group_str = str(fp_group)
                 fp_parsed = fragmenter.parse_fragment_pathway_group(fp_group_str)
                 self.assertEqual(len(fp_group), len(fp_parsed))
+            coverage = matched_intensity / sum_intensity if sum_intensity > 0 else 0.0
+            pass

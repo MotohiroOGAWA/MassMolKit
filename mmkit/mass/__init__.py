@@ -1,6 +1,6 @@
 from .Adduct import Adduct
 from .AdductedCompound import AdductedCompound
-from .Tolerance import MassTolerance, DaTolerance, PpmTolerance, SwitchingWithinTolerance, parse_mass_tolerance
+from .Tolerance import MassTolerance, DaTolerance, PpmTolerance, AnyDaPpmTolerance, parse_mass_tolerance
 
 __all__ = [
     "Adduct",
@@ -8,6 +8,6 @@ __all__ = [
     "MassTolerance",
     "DaTolerance",
     "PpmTolerance",
-    "SwitchingWithinTolerance",
+    "AnyDaPpmTolerance",
     "parse_mass_tolerance",
 ]

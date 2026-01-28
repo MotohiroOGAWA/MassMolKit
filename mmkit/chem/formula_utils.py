@@ -146,13 +146,17 @@ def assign_formulas_to_peaks(
     for mz, orig_idx in sorted_peaks:
         matches = []
 
-        # Move pointer to the first formula mass >= mz - tolerance
-        while f_idx > 0 and mass_tolerance.tolerance >= mass_tolerance.error(mz, sorted_formulas[f_idx - 1][1]):
-            f_idx -= 1
+        # Move pointer to the first 
+        if sorted_formulas[f_idx][1] < mass_tolerance.to_da_range(mz)[0]:
+            while f_idx < n_formula - 1 and sorted_formulas[f_idx][1] < mass_tolerance.to_da_range(mz)[0]:
+                f_idx += 1
+        else:
+            while f_idx > 0 and mass_tolerance.to_da_range(mz)[0] < sorted_formulas[f_idx - 1][1]:
+                f_idx -= 1
 
         # Check all formulas in range [mz - tol, mz + tol]
         j = f_idx
-        while j < n_formula and mass_tolerance.error(mz, sorted_formulas[j][1]) >= -mass_tolerance.tolerance:
+        while j < n_formula and mz < mass_tolerance.to_da_range(sorted_formulas[j][1])[1]:
             name, exact_mass = sorted_formulas[j]
             if mass_tolerance.within(mz, exact_mass):
                 matches.append((name, mass_tolerance.error(mz, exact_mass)))

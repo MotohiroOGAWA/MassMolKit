@@ -1,3 +1,4 @@
+from typing import List, Dict, Tuple
 from abc import ABC, abstractmethod
 import re
 
@@ -20,6 +21,10 @@ class MassTolerance(ABC):
     @abstractmethod
     def within(self, observed: float, theoretical: float) -> bool:
         """Check if observed value is within tolerance from theoretical."""
+        pass
+
+    @abstractmethod
+    def to_da_range(self, observed: float) -> Tuple[float, float]:
         pass
 
     # --- Operator overloads ---
@@ -61,6 +66,10 @@ class DaTolerance(MassTolerance):
 
     def within(self, observed: float, theoretical: float) -> bool:
         return abs(self.error(observed, theoretical)) <= self.tolerance
+    
+    def to_da_range(self, theoretical: float) -> Tuple[float, float]:
+        return (theoretical - self.tolerance, theoretical + self.tolerance)
+    
 
 
 class PpmTolerance(MassTolerance):
@@ -82,35 +91,40 @@ class PpmTolerance(MassTolerance):
 
     def within(self, observed: float, theoretical: float) -> bool:
         return abs(self.error(observed, theoretical)) <= self.tolerance
+    
+    def to_da_range(self, theoretical: float) -> Tuple[float, float]:
+        delta = theoretical * self.tolerance / 1e6
+        return (theoretical - delta, theoretical + delta)
 
-class SwitchingWithinTolerance(MassTolerance):
+class AnyDaPpmTolerance(MassTolerance):
     """
-    Error/unit are fixed (Da or ppm).
-    The 'within' check switches between Da and ppm
-    based on theoretical mass.
+    Error/unit are fixed (Da or ppm) for representation.
+    The 'within' check passes if either Da tolerance OR ppm tolerance is satisfied.
     """
 
     def __init__(
         self,
         *,
-        mode: str,                 # "Da" or "ppm"
-        da_within: float,          # Da tolerance used when theoretical < switch_mass
-        ppm_within: float,         # ppm tolerance used when theoretical >= switch_mass
-        switch_mass: float = 500.0,
+        mode: str,        # "Da" or "ppm" (representation only)
+        da_tolerance: float,
+        ppm_tolerance: float,
     ):
         if mode.lower() not in (DaTolerance._unit().lower(), PpmTolerance._unit().lower()):
-            raise ValueError(f"mode must be '{DaTolerance._unit()}' or '{PpmTolerance._unit()}', got '{mode}'")
+            raise ValueError(
+                f"mode must be '{DaTolerance._unit()}' or '{PpmTolerance._unit()}', got '{mode}'"
+            )
 
+        # representation tolerance (for .tolerance and .unit)
         if mode.lower() == DaTolerance._unit().lower():
-            super().__init__(da_within)
+            super().__init__(da_tolerance)
             self.mode = DaTolerance._unit()
         else:
-            super().__init__(ppm_within)
+            super().__init__(ppm_tolerance)
             self.mode = PpmTolerance._unit()
-        self.switch_mass = switch_mass
 
-        self._da_within = DaTolerance(da_within)
-        self._ppm_within = PpmTolerance(ppm_within)
+        # the actual checkers
+        self._da_within = DaTolerance(da_tolerance)
+        self._ppm_within = PpmTolerance(ppm_tolerance)
 
     # -------------------------------------------------
     # Fixed representation
@@ -120,19 +134,27 @@ class SwitchingWithinTolerance(MassTolerance):
         return self.mode
 
     def error(self, observed: float, theoretical: float) -> float:
-        if self.mode == "Da":
+        if self.mode == DaTolerance._unit():
             return observed - theoretical
-        else:  # ppm
+        elif self.mode == PpmTolerance._unit():
             return (observed - theoretical) / theoretical * 1e6
+        else:
+            raise RuntimeError("Unreachable code reached in AnyDaPpmTolerance.error()")
 
     # -------------------------------------------------
-    # Hybrid "within"
+    # OR "within"
     # -------------------------------------------------
     def within(self, observed: float, theoretical: float) -> bool:
-        if theoretical < self.switch_mass:
-            return self._da_within.within(observed, theoretical)
-        else:
-            return self._ppm_within.within(observed, theoretical)
+        return (
+            self._da_within.within(observed, theoretical)
+            or self._ppm_within.within(observed, theoretical)
+        )
+
+    def to_da_range(self, theoretical: float) -> Tuple[float, float]:
+        da_lo, da_hi = self._da_within.to_da_range(theoretical)
+        ppm_lo, ppm_hi = self._ppm_within.to_da_range(theoretical)
+        # OR condition => union range in Da
+        return min(da_lo, ppm_lo), max(da_hi, ppm_hi)
 
     def __repr__(self):
         return (
@@ -140,17 +162,14 @@ class SwitchingWithinTolerance(MassTolerance):
             f"mode='{self.mode}', "
             f"tolerance={self.tolerance}{self.unit}, "
             f"da_within={self._da_within.tolerance}Da, "
-            f"ppm_within={self._ppm_within.tolerance}ppm, "
-            f"switch_mass={self.switch_mass})"
+            f"ppm_within={self._ppm_within.tolerance}ppm)"
         )
 
-_SWITCH_RE = re.compile(
+_ANY_RE = re.compile(
     r"""
-    ^switch:
+    ^any:
     (?P<da>[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)da,
     (?P<ppm>[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)ppm
-    @
-    (?P<switch_mass>[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)
     $
     """,
     re.VERBOSE | re.IGNORECASE,
@@ -176,11 +195,11 @@ def parse_mass_tolerance(
 
     Supported formats
     -----------------
-    1) SwitchingWithinTolerance (strict):
-        switch:<da>da,<ppm>ppm@<switch_mass>
-        e.g. switch:0.01da,10ppm@500
+    1) AnyDaPpmTolerance (OR condition):
+        any:<da>da,<ppm>ppm
+        e.g. any:0.01da,10ppm
 
-    2) Fixed tolerance (strict):
+    2) Fixed tolerance:
         <value><unit>
         e.g. 0.01da, 10ppm
 
@@ -188,10 +207,8 @@ def parse_mass_tolerance(
     -------------
     tolerance_unit:
         "da" or "ppm"
-        - For SwitchingWithinTolerance: controls mode (error()/unit representation)
-        - For Fixed tolerance:
-            If tolerance_value contains its own suffix (da/ppm), that suffix is used.
-            Otherwise, this function raises (we keep strict behavior).
+        - For AnyDaPpmTolerance: controls mode (error()/unit representation)
+        - For Fixed tolerance: ignored because the suffix provides unit
     """
     unit_arg = tolerance_unit.lower()
     if unit_arg not in ("da", "ppm"):
@@ -199,29 +216,25 @@ def parse_mass_tolerance(
 
     spec = tolerance_value.strip()
 
-    # --- 1) SwitchingWithinTolerance ---
-    m = _SWITCH_RE.match(spec)
+    # --- 1) AnyDaPpmTolerance: "any:<da>da,<ppm>ppm" ---
+    m = _ANY_RE.match(spec)
     if m:
         da_within = float(m.group("da"))
         ppm_within = float(m.group("ppm"))
-        switch_mass = float(m.group("switch_mass"))
 
         if da_within <= 0:
             raise ValueError("da_within must be > 0")
         if ppm_within <= 0:
             raise ValueError("ppm_within must be > 0")
-        if switch_mass <= 0:
-            raise ValueError("switch_mass must be > 0")
 
         mode = "Da" if unit_arg == "da" else "ppm"
-        return SwitchingWithinTolerance(
+        return AnyDaPpmTolerance(
             mode=mode,
-            da_within=da_within,
-            ppm_within=ppm_within,
-            switch_mass=switch_mass,
+            da_tolerance=da_within,
+            ppm_tolerance=ppm_within,
         )
 
-    # --- 2) Fixed tolerance: "<value><unit>" only ---
+    # --- 2) Fixed tolerance: "<value><unit>" ---
     m = _FIXED_RE.match(spec)
     if m:
         val = float(m.group("val"))
@@ -236,6 +249,6 @@ def parse_mass_tolerance(
 
     raise ValueError(
         "Invalid tolerance format. Supported formats are:\n"
-        "  - switch:<da>da,<ppm>ppm@<switch_mass>  (e.g. switch:0.01da,10ppm@500)\n"
-        "  - <value><unit>                        (e.g. 0.01da or 10ppm)"
+        "  - any:<da>da,<ppm>ppm                (e.g. any:0.01da,10ppm)\n"
+        "  - <value><unit>                      (e.g. 0.01da or 10ppm)"
     )

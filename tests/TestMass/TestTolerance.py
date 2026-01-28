@@ -56,58 +56,56 @@ class TestPpmTolerance(unittest.TestCase):
         self.assertAlmostEqual((tol / 4).tolerance, 2.5, places=12)
 
 
-class TestSwitchingWithinTolerance(unittest.TestCase):
+class TestAnyDaPpmTolerance(unittest.TestCase):
     def test_mode_da_sets_tolerance_to_da_within(self):
-        tol = SwitchingWithinTolerance(mode="Da", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+        tol = AnyDaPpmTolerance(mode="Da", da_tolerance=0.01, ppm_tolerance=10.0)
         self.assertEqual(tol.unit, "Da")
         self.assertAlmostEqual(tol.tolerance, 0.01, places=12)
 
     def test_mode_ppm_sets_tolerance_to_ppm_within(self):
-        tol = SwitchingWithinTolerance(mode="ppm", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+        tol = AnyDaPpmTolerance(mode="ppm", da_tolerance=0.01, ppm_tolerance=10.0)
         self.assertEqual(tol.unit, "ppm")
         self.assertAlmostEqual(tol.tolerance, 10.0, places=12)
 
     def test_error_uses_mode_da(self):
-        tol = SwitchingWithinTolerance(mode="Da", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+        tol = AnyDaPpmTolerance(mode="Da", da_tolerance=0.01, ppm_tolerance=10.0)
         self.assertAlmostEqual(tol.error(100.005, 100.000), 0.005, places=12)
 
     def test_error_uses_mode_ppm(self):
-        tol = SwitchingWithinTolerance(mode="ppm", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+        tol = AnyDaPpmTolerance(mode="ppm", da_tolerance=0.01, ppm_tolerance=10.0)
         # observed - theoretical = 0.001 at theoretical 100 -> 10 ppm
         self.assertAlmostEqual(tol.error(100.001, 100.0), 10.0, places=9)
 
     def test_within_switches_to_da_below_threshold(self):
-        tol = SwitchingWithinTolerance(mode="ppm", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+        tol = AnyDaPpmTolerance(mode="ppm", da_tolerance=0.01, ppm_tolerance=10.0)
         theoretical = 100.0  # below 500 -> Da rule
         self.assertTrue(tol.within(theoretical + 0.009, theoretical))
         self.assertFalse(tol.within(theoretical + 0.011, theoretical))
 
     def test_within_switches_to_ppm_at_or_above_threshold(self):
-        tol = SwitchingWithinTolerance(mode="Da", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
-        theoretical = 500.0  # >= 500 -> ppm rule (note: code uses < for Da branch)
-        # 10 ppm at 500.0 => 0.005 Da
-        self.assertTrue(tol.within(theoretical + 0.005, theoretical))
-        self.assertFalse(tol.within(theoretical + 0.006, theoretical))
+        tol = AnyDaPpmTolerance(mode="Da", da_tolerance=0.01, ppm_tolerance=10.0)
+        theoretical = 99.0 
+        self.assertTrue(tol.within(theoretical + 0.009, theoretical))
+        self.assertFalse(tol.within(theoretical + 0.011, theoretical))
 
     def test_invalid_mode_raises(self):
         with self.assertRaises(ValueError):
-            SwitchingWithinTolerance(mode="xyz", da_within=0.01, ppm_within=10.0, switch_mass=500.0)
+            AnyDaPpmTolerance(mode="xyz", da_tolerance=0.01, ppm_tolerance=10.0)
 
 
 class TestParseMassToleranceDispatch(unittest.TestCase):
-    def test_parse_switch_to_switching_da_mode(self):
-        tol = parse_mass_tolerance("switch:0.01da,10ppm@500", "da")
-        self.assertIsInstance(tol, SwitchingWithinTolerance)
+    def test_parse_any_da_mode(self):
+        tol = parse_mass_tolerance("any:0.01da,10ppm", "da")
+        self.assertIsInstance(tol, AnyDaPpmTolerance)
         self.assertEqual(tol.unit, "Da")
         self.assertAlmostEqual(tol._da_within.tolerance, 0.01, places=12)
         self.assertAlmostEqual(tol._ppm_within.tolerance, 10.0, places=12)
-        self.assertAlmostEqual(tol.switch_mass, 500.0, places=12)
         # mode=Da => MassTolerance.tolerance should be da_within
         self.assertAlmostEqual(tol.tolerance, 0.01, places=12)
 
-    def test_parse_switch_to_switching_ppm_mode(self):
-        tol = parse_mass_tolerance("switch:0.01da,10ppm@500", "ppm")
-        self.assertIsInstance(tol, SwitchingWithinTolerance)
+    def test_parse_any_ppm_mode(self):
+        tol = parse_mass_tolerance("any:0.01da,10ppm", "ppm")
+        self.assertIsInstance(tol, AnyDaPpmTolerance)
         self.assertEqual(tol.unit, "ppm")
         # mode=ppm => MassTolerance.tolerance should be ppm_within
         self.assertAlmostEqual(tol.tolerance, 10.0, places=12)

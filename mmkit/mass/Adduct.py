@@ -132,16 +132,30 @@ class Adduct:
         """
         return hash(self.__str__())
     
-    def __add__(self, other: "Adduct") -> "Adduct":
-        if not isinstance(other, Adduct):
-            return NotImplemented
+    def add(self, other: "Adduct", prefer_ion_type: bool = False, prefer_n_molecules: bool = False, prefer_charge: bool = False) -> "Adduct":
+        assert isinstance(other, Adduct), f"Can only add Adduct to Adduct, but got {type(other)}"
 
-        # Ion type consistency check
-        if self._ion_type != other._ion_type:
-            raise ValueError(
-                f"Cannot add Adducts with different ion_type: "
-                f"{self._ion_type} + {other._ion_type}"
+        if not prefer_ion_type:
+            if self._ion_type != other._ion_type:
+                raise ValueError(
+                    f"Cannot add Adducts with different ion_type: "
+                    f"{self._ion_type} + {other._ion_type}"
+                )
+        ion_type = self._ion_type
+
+        if not prefer_n_molecules:
+            assert self._n_molecules == other._n_molecules, (
+                f"Cannot add Adducts with different n_molecules: "
+                f"{self._n_molecules} + {other._n_molecules}"
             )
+        n_molecules = self._n_molecules
+
+        if not prefer_charge:
+            assert self._charge == other._charge, (
+                f"Cannot add Adducts with different charge: "
+                f"{self._charge} + {other._charge}"
+            )
+        charge = self._charge
 
         # Merge formula counts
         merged_formula_counts: dict[Formula, int] = defaultdict(int)
@@ -162,12 +176,29 @@ class Adduct:
             elif cnt < 0:
                 adducts_out.extend([f.copy()] * (-cnt))
 
-        return Adduct(
-            ion_type=self._ion_type,
-            n_molecules=self._n_molecules + other._n_molecules,
+        out = Adduct(
+            ion_type=ion_type,
+            n_molecules=n_molecules,
             adducts_in=adducts_in,
             adducts_out=adducts_out,
-            charge_offset=self._charge + other._charge,
+        )
+        out.set_charge(charge)
+        return out
+    
+    def add_prefer_self(self, other: "Adduct") -> "Adduct":
+        """
+        Add two Adducts together, preferring this Adduct's properties in case of conflicts.
+        
+        Args:
+            other (Adduct): The other Adduct to add.
+        Returns:
+            Adduct: The resulting Adduct after addition.
+        """
+        return self.add(
+            other,
+            prefer_ion_type=True,
+            prefer_n_molecules=True,
+            prefer_charge=True
         )
 
     def copy(self) -> "Adduct":
@@ -302,8 +333,95 @@ class Adduct:
         mz = total_mass / abs(self.charge)
         return mz
     
+    def _split_adduct_formulas(self) -> tuple[list[Formula], list[Formula]]:
+        """
+        Split internal adduct formulas into positive (in) and negative (out) lists.
 
-def split_adduct_components(adduct: Adduct, reference_adducts: Tuple[Adduct]) -> Tuple[Dict[Adduct, int], Dict[Adduct, int]]:
+        Returns:
+            (adducts_in, adducts_out)
+        """
+        adducts_in: list[Formula] = []
+        adducts_out: list[Formula] = []
+
+        for f, cnt in self._adduct_formulas.items():
+            if cnt > 0:
+                adducts_in.extend([f.copy()] * cnt)
+            elif cnt < 0:
+                adducts_out.extend([f.copy()] * (-cnt))
+
+        return adducts_in, adducts_out
+    
+    def split(self, split_each: bool = False) -> Tuple["Adduct", ...]:
+        """
+        Split this Adduct into independent Adducts.
+
+        Args:
+            split_each (bool):
+                If False, group adducts_in and adducts_out as-is.
+                If True, split each Formula into its own Adduct.
+
+        Example:
+            [M+H-NH3]+
+                split_each=False -> ([M+H]+, [M-NH3])
+                split_each=True  -> ([M+H]+, [M-NH3])
+        """
+        result: list[Adduct] = []
+
+        adducts_in, adducts_out = self._split_adduct_formulas()
+
+        # ---------- positive (additions) ----------
+        if adducts_in:
+            if split_each:
+                for f in adducts_in:
+                    result.append(
+                        Adduct(
+                            ion_type=self._ion_type,
+                            n_molecules=self._n_molecules,
+                            adducts_in=[f.copy()],
+                            adducts_out=[],
+                            charge_offset=f.charge,  # keep charge per adduct
+                        )
+                    )
+            else:
+                result.append(
+                    Adduct(
+                        ion_type=self._ion_type,
+                        n_molecules=self._n_molecules,
+                        adducts_in=adducts_in,
+                        adducts_out=[],
+                        charge_offset=self._charge,
+                    )
+                )
+
+        # ---------- negative (losses) ----------
+        if adducts_out:
+            if split_each:
+                for f in adducts_out:
+                    result.append(
+                        Adduct(
+                            ion_type=self._ion_type,
+                            n_molecules=self._n_molecules,
+                            adducts_in=[],
+                            adducts_out=[f.copy()],
+                            charge_offset=0,  # neutral loss
+                        )
+                    )
+            else:
+                result.append(
+                    Adduct(
+                        ion_type=self._ion_type,
+                        n_molecules=self._n_molecules,
+                        adducts_in=[],
+                        adducts_out=adducts_out,
+                        charge_offset=0,
+                    )
+                )
+
+        return tuple(result)
+        
+    
+
+def split_adduct_components(adduct: Adduct, reference_adducts: Tuple[Adduct]) -> Tuple[Dict[Adduct, int], Adduct]:
     """
     Split a complex Adduct into:
         (1) a mapping of supported adduct types to their counts, and
@@ -312,7 +430,7 @@ def split_adduct_components(adduct: Adduct, reference_adducts: Tuple[Adduct]) ->
     Returns:
         Tuple[
             Dict[Adduct, int],   # mapping of adduct type → count
-            Dict[Adduct, int]    # neutral portion (charge 0)
+            Adduct    # neutral portion (charge 0)
         ]
     """
     h2o = Formula.parse("H2O")

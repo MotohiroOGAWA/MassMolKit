@@ -178,12 +178,15 @@ class Fragmenter:
             mass_tolerance: MassTolerance,
     ) -> List[FragmentPathwayGroup]:
         precursor_type_charge = precursor_type.charge
+
+        empty_adduct = Adduct.parse("[M]")
         ion_adduct_strs: Set[str] = set()
         if precursor_type_charge == 1:
             plus_h_adduct = Adduct.parse("[M+H]+")
             normal_adduct: Adduct = Adduct.parse("[M]+")
             minus_h_adduct: Adduct = Adduct.parse("[M-H]+")
             ion_adduct_strs.add(str(plus_h_adduct))
+
         else:
             raise NotImplementedError("Currently only singly charged precursor adducts are supported.")
         
@@ -195,26 +198,39 @@ class Fragmenter:
 
         ion_adducts: Set[Adduct] = {Adduct.parse(adduct_str) for adduct_str in ion_adduct_strs}
 
+        # neutral_adducts: List[Adduct] = [empty_adduct]
+        # grouped_neutral_adducts = neutral_component_adduct.split(split_each=False)
+        # for group_adduct in grouped_neutral_adducts:
+        #     component_adducts = group_adduct.split(split_each=True)
+        #     tmp_adduct = empty_adduct.copy()
+        #     for ca in component_adducts:
+        #         tmp_adduct = tmp_adduct.add_prefer_self(ca)
+        #         neutral_adducts.append(tmp_adduct)
+        # neutral_adducts = list(set(neutral_adducts))
+        neutral_adduct: Adduct = neutral_component_adduct
+
         formula_to_node_candidates: Dict[Formula, List[Tuple[int, Compound, Adduct, Formula]]] = defaultdict(list)
         for node_index in range(h_fragment_tree.num_nodes):
             node = h_fragment_tree.tree.get_node(node_index)
 
-            ion_adducts: List[Adduct] = []
-            neutral_adducts = h_fragment_tree.neutral_rule_bundle.node_adduct_candidates(node_index)
+            hs_ion_adducts: List[Adduct] = []
+            hs_neutral_adducts = h_fragment_tree.neutral_rule_bundle.node_adduct_candidates(node_index)
             if precursor_type_charge == 1:
                 ion_hs_candidates = h_fragment_tree.ion_rule_bundle.node_candidates(node_index)
                 if 1 in ion_hs_candidates or node_index == 0:
-                    ion_adducts.append(plus_h_adduct)
+                    hs_ion_adducts.append(plus_h_adduct)
                 if 0 in ion_hs_candidates:
-                    ion_adducts.append(normal_adduct)
+                    hs_ion_adducts.append(normal_adduct)
                 if -1 in ion_hs_candidates:
-                    ion_adducts.append(minus_h_adduct)
+                    hs_ion_adducts.append(minus_h_adduct)
                 if {1, 0, -1}.issubset(ion_hs_candidates):
                     raise ValueError("Inconsistent hydrogen rearrangement assignments detected.")
             else:
                 raise NotImplementedError("Currently only singly charged precursor adducts are supported.")
- 
-            adduct_pairs = [ion_adduct+neutral_adduct for ion_adduct, neutral_adduct in itertools.product(ion_adducts, neutral_adducts)]
+
+            adduct_pairs: List[Adduct] = list(set(list(ion_adducts)+list(hs_ion_adducts)))
+            adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(adduct_pairs, [neutral_adduct])]))
+            adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(adduct_pairs, hs_neutral_adducts)]))
             compound = Compound.from_smiles(node.smiles)
             f = compound.formula
             for a in adduct_pairs:
