@@ -1,0 +1,31 @@
+ion_mode: positive
+fragment_tree_builder:
+  max_depth: 3
+  cleavage_pattern_set:
+    name: ''
+    patterns:
+    - smirks: '[!#1:1]-!@[!#1:2]>>[!#1:1][H]'
+      name: ''
+      charge_mode: any
+      version: 1.0
+  only_add_min_depth: true
+adduct_types:
+- '[M+H]+'
+- '[M+NH4]+'
+- '[M+Na]+'
+hydrogen_rearrangement:
+  version: 1.0
+  ion_hydrogen_shift:
+    plus_h_atoms:
+    - N
+    - O
+    - P
+    - S
+    minus_h_atoms:
+    - C
+    - P
+    - S
+  radical:
+    max_count: 1
+  bond_unsaturation:
+    max_count: 2

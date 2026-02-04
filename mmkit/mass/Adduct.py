@@ -481,13 +481,15 @@ def split_adduct_components(adduct: Adduct, reference_adducts: Tuple[Adduct]) ->
         raise ValueError(f"Adduct charge must be non-zero to split: {adduct}")
 
     # Create neutral portion (charge 0)
-    neutral_component_adduct = Adduct(
+    neutral_component = Adduct(
         ion_type=adduct._ion_type,
         n_molecules=adduct._n_molecules,
         adducts_in=neutral_formulas_in,
         adducts_out=neutral_formulas_out,
         charge_offset=0
     )
-    neutral_component_adduct._charge = 0
+    neutral_component._charge = 0
 
-    return dict(adduct_composition), neutral_component_adduct
+    adduct_composition = dict(sorted(adduct_composition.items(), key=lambda x: str(x[0])))
+
+    return adduct_composition, neutral_component
