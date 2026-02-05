@@ -30,7 +30,7 @@ class Adduct:
 
         self._ion_type = ion_type
         self._n_molecules = n_molecules
-        formula_count_in: dict[Formula, int] = defaultdict(int)
+        formula_count_in: Dict[Formula, int] = defaultdict(int)
         charge = 0
         for f in adducts_in:
             formula_count_in[f] += 1
@@ -39,8 +39,18 @@ class Adduct:
             formula_count_in[f] -= 1
             charge -= f.charge
 
-        self._adduct_formulas: dict[Formula, int] = {f.copy(): cnt for f, cnt in formula_count_in.items()}
+        self._adduct_formulas: Dict[Formula, int] = {f.copy(): cnt for f, cnt in formula_count_in.items()}
         self._charge = charge + charge_offset
+
+    @property
+    def adduct_formulas(self) -> Dict[Formula, int]:
+        """
+        Get the adduct formulas with their counts.
+        
+        Returns:
+            Dict[Formula, int]: Dictionary of adduct formulas and their counts.
+        """
+        return dict(self._adduct_formulas)
 
     @property
     def formula_shift(self) -> Formula:

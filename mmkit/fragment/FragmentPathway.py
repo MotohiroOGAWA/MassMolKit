@@ -366,7 +366,7 @@ class FragmentPathway:
         return self._formula
 
     @staticmethod
-    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, precursor_formula: Formula, adduct_type: Adduct) -> Tuple['FragmentPathway']:
+    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, adduct_type: Adduct, precursor_formula_without_hs: Formula, adduct_type_without_hs: Adduct) -> Tuple['FragmentPathway']:
         path = FragmentPathway._collect_path_to_root(fragment_tree, node_id)
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
@@ -374,7 +374,7 @@ class FragmentPathway:
             for i in range(len(p)):
                 if i % 2 == 0:
                     compound = Compound.from_smiles(p[i].smiles)
-                    if precursor_formula.normalized.value == adduct_type.calc_formula(compound.formula).normalized.value:
+                    if precursor_formula_without_hs.normalized.value == adduct_type_without_hs.calc_formula(compound.formula).normalized.value:
                         is_precursor = True
                     else:
                         is_precursor = False

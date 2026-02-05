@@ -239,6 +239,23 @@ class Fragmenter:
 
         precursor_compound = Compound.from_smiles(h_fragment_tree.tree.smiles)
         precursor_formula = precursor_type.calc_formula(precursor_compound.formula).normalized
+        
+        def remove_hs_from_adduct(at: Adduct) -> Adduct:
+            at_without_hs = at.copy()
+            for f, cnt in at.adduct_formulas.items(): 
+                if str(f.plain) == "H":
+                    if cnt > 0:
+                        r_hs_adduct = Adduct.parse(f"[M-{cnt}H]" if cnt > 1 else "[M-H]")
+                    elif cnt < 0:
+                        r_hs_adduct = Adduct.parse(f"[M+{abs(cnt)}H]" if abs(cnt) > 1 else "[M+H]")
+                    else:
+                        continue
+                    at_without_hs = at_without_hs.add_prefer_self(r_hs_adduct)
+            formula_without_hs = at_without_hs.calc_formula(precursor_compound.formula).normalized
+            return at_without_hs, formula_without_hs
+        
+        _, precursor_formula_without_hs = remove_hs_from_adduct(precursor_type)
+
             
         formula_candidates = [f for f in formula_to_node_candidates.keys()]
         assigned_peaks = assign_formulas_to_peaks(
@@ -254,7 +271,8 @@ class Fragmenter:
                     formula = Formula.parse(formula_str, store_raw=False)
                     pathway_terminal_candidates = formula_to_node_candidates[formula]
                     for node_index, compound, adduct_type, adducted_formula in pathway_terminal_candidates:
-                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, precursor_formula, adduct_type)
+                        adduct_type_without_hs, _ = remove_hs_from_adduct(adduct_type)
+                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, adduct_type, precursor_formula_without_hs, adduct_type_without_hs)
                         fragment_pathways.extend(pathways)
             fragment_pathways_by_peak[i] = FragmentPathwayGroup.from_list(fragment_pathways)
         return fragment_pathways_by_peak

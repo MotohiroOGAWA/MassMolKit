@@ -292,17 +292,6 @@ class Formula:
 
     def copy(self) -> 'Formula':
         return Formula(self._elements, self._charge, self._raw_formula)
-    
-    @property
-    def normalized(self) -> "Formula":
-        """
-        Return a new Formula with raw_formula cleared.
-        """
-        return Formula(
-            elements=self._elements.copy(),
-            charge=self._charge,
-            raw_formula=""
-        )
 
     @classmethod
     def parse(self, formula_str: str, store_raw: bool = True) -> 'Formula':
