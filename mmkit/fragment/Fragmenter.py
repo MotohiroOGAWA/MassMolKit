@@ -1,13 +1,7 @@
 import os
 from typing import List, Tuple, Dict, Set, Union
 from collections import defaultdict
-from dataclasses import dataclass
-import time
-from matplotlib import text
-from rdkit import Chem
 import yaml
-import re
-from pathlib import Path
 import itertools
 
 from .CleavagePattern import CleavagePattern
@@ -21,7 +15,8 @@ from ..chem.Compound import Compound, Formula
 from ..chem.formula_utils import assign_formulas_to_peaks
 from .FragmentResult import FragmentResult
 from .FragmentPathway import *
-from ..mass.Adduct import Adduct, split_adduct_components
+from ..mass.Adduct import Adduct
+from ..mass.utilities import split_adduct_components
 from ..mass.Tolerance import MassTolerance
 
 class Fragmenter:

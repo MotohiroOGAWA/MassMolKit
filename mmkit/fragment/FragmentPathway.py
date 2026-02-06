@@ -5,11 +5,8 @@ import re
 
 from .CleavagePattern import CleavagePattern
 from .FragmentTree import FragmentTree, FragmentEdge, FragmentNode
-from .HydrogenRearrangedFragmentTree import HydrogenRearrangedFragmentTree
 from ..chem.Formula import Formula
-from ..chem.formula_utils import assign_formulas_to_peaks
-from ..mass.Tolerance import MassTolerance
-from ..mass.Adduct import Adduct, split_adduct_components
+from ..mass.Adduct import Adduct
 from ..chem.Compound import Compound
 
 
