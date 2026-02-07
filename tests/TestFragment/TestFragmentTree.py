@@ -225,6 +225,8 @@ class TestFragmentTree(unittest.TestCase):
                 matched_intensity += intensity
 
                 fp_group_str = str(fp_group)
+                if len(fp_group[0].path) > 1:
+                    FragmentPathwayEdge.parse(str(fp_group[0].get_edge(0)))
                 fp_parsed = fragmenter.parse_fragment_pathway_group(fp_group_str)
                 self.assertEqual(len(fp_group), len(fp_parsed))
             coverage = matched_intensity / sum_intensity if sum_intensity > 0 else 0.0

@@ -328,6 +328,10 @@ class FragmentPathway:
         assert isinstance(node, FragmentPathwayNode)
         return node
     
+    @property
+    def nodes(self) -> Tuple['FragmentPathwayNode']:
+        return tuple(self.path[i] for i in range(0, len(self.path), 2))
+    
     def get_edge(self, index: int) -> 'FragmentPathwayEdge':
         edge: FragmentPathwayEdge = None
         if index >= 0:
@@ -336,6 +340,10 @@ class FragmentPathway:
             edge = self.path[len(self.path) + index * 2]
         assert isinstance(edge, FragmentPathwayEdge)
         return edge
+    
+    @property
+    def edges(self) -> Tuple['FragmentPathwayEdge']:
+        return tuple(self.path[i] for i in range(1, len(self.path), 2))
 
     @property
     def smiles(self) -> str:
@@ -447,6 +455,60 @@ class FragmentPathwayEdge:
     def __str__(self):
         fragment_steps_strs = [str(step) for step in self.fragment_steps]
         return "[" + ",".join(fragment_steps_strs) + "]"
+
+    @classmethod
+    def parse(cls, text: str) -> "FragmentPathwayEdge":
+        """
+        Parse a string representation of FragmentPathwayEdge.
+
+        Expected format
+        ----------------
+        [
+          (react_indices, prod_indices, cleavage_pattern),
+          (react_indices, prod_indices, cleavage_pattern),
+          ...
+        ]
+
+        Returns
+        -------
+        FragmentPathwayEdge
+        """
+        text = text.strip()
+
+        # --- Remove surrounding brackets ---
+        if not (text.startswith("[") and text.endswith("]")):
+            raise ValueError(f"Invalid FragmentPathwayEdge format: {text}")
+
+        inner = text[1:-1].strip()
+        if not inner:
+            return cls(fragment_steps=[])
+
+        # --- Extract top-level "( ... )" blocks safely ---
+        # This regex matches balanced parentheses at one level
+        step_texts = []
+        depth = 0
+        start = None
+
+        for i, ch in enumerate(inner):
+            if ch == "(":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0 and start is not None:
+                    step_texts.append(inner[start:i + 1])
+                    start = None
+
+        if depth != 0:
+            raise ValueError(f"Unbalanced parentheses in FragmentPathwayEdge: {text}")
+
+        # --- Parse each FragmentStep ---
+        fragment_steps = []
+        for step_text in step_texts:
+            fragment_steps.append(FragmentStep.parse(step_text))
+
+        return cls(fragment_steps=fragment_steps)
     
 class FragmentStep:
     def __init__(self, cleavage_pattern: CleavagePattern, react_indices: Tuple[int,...], prod_indices: Tuple[int,...]):
