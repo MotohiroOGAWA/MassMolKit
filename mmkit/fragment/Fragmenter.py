@@ -51,7 +51,7 @@ class Fragmenter:
             )
         
         assert isinstance(hydrogen_rearrangement, HydrogenRearrangement), "hydrogen_rearrangement must be an instance of HydrogenRearrangement"
-    
+
         self._ion_mode = ion_mode
         self._adduct_types = adduct_types
         self._fragment_tree_builder = fragment_tree_builder
@@ -60,7 +60,7 @@ class Fragmenter:
     @property
     def ion_mode(self) -> IonMode:
         return self._ion_mode
-    
+
     @property
     def adduct_types(self) -> Tuple[Adduct]:
         return tuple(self._adduct_types)
@@ -108,7 +108,7 @@ class Fragmenter:
         adduct_types = tuple(Adduct.parse(adduct_str) for adduct_str in data.get("adduct_types", []))
         hydrogen_rearrangement = HydrogenRearrangement.from_dict(
             data.get("hydrogen_rearrangement", {})
-        )
+        )   
         return cls(ion_mode=ion_mode, fragment_tree_builder=fragment_tree_builder, adduct_types=adduct_types, hydrogen_rearrangement=hydrogen_rearrangement)
 
     def to_yaml(self, path: str):
@@ -171,7 +171,7 @@ class Fragmenter:
             precursor_type: Adduct,
             peaks_mz: List[float],
             mass_tolerance: MassTolerance,
-    ) -> List[FragmentPathwayGroup]:
+    ) -> Tuple[FragmentPathwayGroup, List[FragmentPathwayGroup]]:
         precursor_type_charge = precursor_type.charge
 
         empty_adduct = Adduct.parse("[M]")
@@ -187,24 +187,38 @@ class Fragmenter:
         
         adduct_composition, neutral_component_adduct = split_adduct_components(precursor_type, reference_adducts=self.adduct_types)
         assert len(adduct_composition) == 1, "Precursor adduct must contain only one adduct component."
-        adduct_type = next(iter(adduct_composition))
-        assert adduct_composition[adduct_type] == 1, "Precursor adduct must contain only one adduct component."
-        ion_adduct_strs.add(str(adduct_type))
+        main_adduct_type = next(iter(adduct_composition))
+        assert adduct_composition[main_adduct_type] == 1, "Precursor adduct must contain only one adduct component."
+        ion_adduct_strs.add(str(main_adduct_type))
 
         ion_adducts: Set[Adduct] = {Adduct.parse(adduct_str) for adduct_str in ion_adduct_strs}
 
-        # neutral_adducts: List[Adduct] = [empty_adduct]
-        # grouped_neutral_adducts = neutral_component_adduct.split(split_each=False)
-        # for group_adduct in grouped_neutral_adducts:
-        #     component_adducts = group_adduct.split(split_each=True)
-        #     tmp_adduct = empty_adduct.copy()
-        #     for ca in component_adducts:
-        #         tmp_adduct = tmp_adduct.add_prefer_self(ca)
-        #         neutral_adducts.append(tmp_adduct)
-        # neutral_adducts = list(set(neutral_adducts))
+
+        def remove_hs_from_adduct(at: Adduct) -> Adduct:
+            at_without_hs = at.copy()
+            for f, cnt in at.adduct_formulas.items(): 
+                if str(f.plain) == "H":
+                    if cnt > 0:
+                        r_hs_adduct = Adduct.parse(f"[M-{cnt}H]" if cnt > 1 else "[M-H]")
+                    elif cnt < 0:
+                        r_hs_adduct = Adduct.parse(f"[M+{abs(cnt)}H]" if abs(cnt) > 1 else "[M+H]")
+                    else:
+                        continue
+                    at_without_hs = at_without_hs.add_prefer_self(r_hs_adduct)
+            return at_without_hs
+        
+        main_adduct_type_without_hs = remove_hs_from_adduct(main_adduct_type)
+        
+        precursor_compound = Compound.from_smiles(h_fragment_tree.tree.smiles)
+        precursor_formula = precursor_type.calc_formula(precursor_compound.formula).normalized
+        precursor_type_without_hs = remove_hs_from_adduct(precursor_type)
+        precursor_formula_without_hs = precursor_type_without_hs.calc_formula(precursor_compound.formula).normalized
+        
+
         neutral_adduct: Adduct = neutral_component_adduct
 
         formula_to_node_candidates: Dict[Formula, List[Tuple[int, Compound, Adduct, Formula]]] = defaultdict(list)
+        precursor_node_candidates: Set[Tuple[int, str, Adduct]] = set()
         for node_index in range(h_fragment_tree.num_nodes):
             node = h_fragment_tree.tree.get_node(node_index)
 
@@ -222,36 +236,31 @@ class Fragmenter:
                     raise ValueError("Inconsistent hydrogen rearrangement assignments detected.")
             else:
                 raise NotImplementedError("Currently only singly charged precursor adducts are supported.")
-
-            adduct_pairs: List[Adduct] = list(set(list(ion_adducts)+list(hs_ion_adducts)))
-            adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(adduct_pairs, [neutral_adduct])]))
-            adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(adduct_pairs, hs_neutral_adducts)]))
+            
+            ion_adduct_pairs: List[Adduct] = list(set(list(ion_adducts)+list(hs_ion_adducts)))
+            ion_adduct_with_hs_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(ion_adduct_pairs, hs_neutral_adducts)]))
+            adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(ion_adduct_with_hs_pairs, [neutral_adduct])]))
             compound = Compound.from_smiles(node.smiles)
             f = compound.formula
             for a in adduct_pairs:
                 af = a.calc_formula(f)
                 formula_to_node_candidates[af.normalized].append((node_index, compound, a, af))
 
-        precursor_compound = Compound.from_smiles(h_fragment_tree.tree.smiles)
-        precursor_formula = precursor_type.calc_formula(precursor_compound.formula).normalized
-        
-        def remove_hs_from_adduct(at: Adduct) -> Adduct:
-            at_without_hs = at.copy()
-            for f, cnt in at.adduct_formulas.items(): 
-                if str(f.plain) == "H":
-                    if cnt > 0:
-                        r_hs_adduct = Adduct.parse(f"[M-{cnt}H]" if cnt > 1 else "[M-H]")
-                    elif cnt < 0:
-                        r_hs_adduct = Adduct.parse(f"[M+{abs(cnt)}H]" if abs(cnt) > 1 else "[M+H]")
-                    else:
-                        continue
-                    at_without_hs = at_without_hs.add_prefer_self(r_hs_adduct)
-            formula_without_hs = at_without_hs.calc_formula(precursor_compound.formula).normalized
-            return at_without_hs, formula_without_hs
-        
-        _, precursor_formula_without_hs = remove_hs_from_adduct(precursor_type)
+            for a in ion_adduct_with_hs_pairs:
+                af = a.calc_formula(f)
+                if af.normalized.value == precursor_formula.normalized.value:
+                    precursor_node_candidates.add((node_index, compound.smiles, a))
 
-            
+
+        precursor_fragment_pathways: List[FragmentPathway] = []
+        for node_index, precursor_smiles, at in precursor_node_candidates:
+            adduct_type_without_hs = remove_hs_from_adduct(at)
+            pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_formula, at)
+            precursor_fragment_pathways.extend(pathways)
+        precursor_fragment_pathway_group = FragmentPathwayGroup.from_list(precursor_fragment_pathways)
+
+
+
         formula_candidates = [f for f in formula_to_node_candidates.keys()]
         assigned_peaks = assign_formulas_to_peaks(
             peaks_mz=peaks_mz,
@@ -265,12 +274,12 @@ class Fragmenter:
                 for formula_str, mass_error in zip(info['matched_formulas'], info['mass_errors']):
                     formula = Formula.parse(formula_str, store_raw=False)
                     pathway_terminal_candidates = formula_to_node_candidates[formula]
-                    for node_index, compound, adduct_type, adducted_formula in pathway_terminal_candidates:
-                        adduct_type_without_hs, _ = remove_hs_from_adduct(adduct_type)
-                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, adduct_type, precursor_formula_without_hs, adduct_type_without_hs)
+                    for node_index, compound, at, adducted_formula in pathway_terminal_candidates:
+                        adduct_type_without_hs = remove_hs_from_adduct(at)
+                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_formula_without_hs, adduct_type_without_hs)
                         fragment_pathways.extend(pathways)
             fragment_pathways_by_peak[i] = FragmentPathwayGroup.from_list(fragment_pathways)
-        return fragment_pathways_by_peak
+        return precursor_fragment_pathway_group, fragment_pathways_by_peak
     
     def parse_fragment_pathway_group(self, fragment_pathway_group_str: str) -> 'FragmentPathwayGroup':
         return FragmentPathwayGroup.parse(fragment_pathway_group_str)

@@ -207,13 +207,19 @@ class TestFragmentTree(unittest.TestCase):
             mass_tolerance = AnyDaPpmTolerance(mode="ppm", da_tolerance=0.01, ppm_tolerance=10.0)
             peaks_mz = [mz for mz, intensity in peaks]
             peaks_intensity = [intensity for mz, intensity in peaks]
-            fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
+            precursor_fragment_pathways, fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
                 h_fragment_tree=h_fragment_tree,
                 precursor_type=precursor_type,
                 peaks_mz=peaks_mz,
                 mass_tolerance=mass_tolerance,
             )
             self.assertEqual(len(fragment_pathways_by_peak), len(peaks_mz))
+
+            pfp_group_str = str(precursor_fragment_pathways)
+            pfp_parsed = fragmenter.parse_fragment_pathway_group(pfp_group_str)
+            for pw in pfp_parsed.pathways:
+                has_precursor = any(node.is_precursor for node in pw.nodes)
+                self.assertTrue(has_precursor, msg=f"Pathway {pw} does not contain a precursor node")
 
             # For each peak, validate that parsing works
             sum_intensity = 0.0
