@@ -21,6 +21,52 @@ class FragmentPathwayGroup:
         assert isinstance(self.pathways, tuple), "pathways must be a tuple"
         for p in self.pathways:
             assert isinstance(p, FragmentPathway), f"All items must be FragmentPathway, got {type(p)}"
+
+    @property
+    def pathways_with_precursor(self) -> Tuple['FragmentPathway', ...]:
+        """
+        Return pathways that contain at least one precursor node.
+        """
+        return tuple(
+            pathway
+            for pathway in self.pathways
+            if any(node.is_precursor for node in pathway.nodes)
+        )
+    
+    @property
+    def with_precursor(self) -> 'FragmentPathwayGroup':
+        """
+        Return a new FragmentPathwayGroup that contains
+        only pathways having at least one precursor node.
+        """
+        filtered = tuple(
+            pathway
+            for pathway in self.pathways
+            if any(node.is_precursor for node in pathway.nodes)
+        )
+        return FragmentPathwayGroup(pathways=filtered)
+    
+    @property
+    def pathways_shortest(self) -> Tuple['FragmentPathway', ...]:
+        """
+        Return the pathway(s) with the shortest length (fewest nodes).
+        """
+        if not self.pathways:
+            return tuple()
+        min_length = min(len(p) for p in self.pathways)
+        return tuple(p for p in self.pathways if len(p) == min_length)
+    
+    @property
+    def shortest(self) -> 'FragmentPathwayGroup':
+        """
+        Return a new FragmentPathwayGroup that contains
+        only the pathway(s) with the shortest length (fewest nodes).
+        """
+        if not self.pathways:
+            return FragmentPathwayGroup(pathways=tuple())
+        min_length = min(len(p) for p in self.pathways)
+        filtered = tuple(p for p in self.pathways if len(p) == min_length)
+        return FragmentPathwayGroup(pathways=filtered)
     
     @staticmethod
     def from_list(
@@ -319,6 +365,9 @@ class FragmentPathway:
     def __repr__(self):
         return f"FragmentPathway(path={self.path})"
 
+    def __len__(self) -> int:
+        return (len(self.path) + 1) // 2  # Number of nodes in the pathway
+
     def get_node(self, index: int) -> 'FragmentPathwayNode':
         node: FragmentPathwayNode = None
         if index >= 0:
@@ -371,7 +420,7 @@ class FragmentPathway:
         return self._formula
 
     @staticmethod
-    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, adduct_type: Adduct, precursor_formula_without_hs: Formula, adduct_type_without_hs: Adduct) -> Tuple['FragmentPathway']:
+    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, adduct_type: Adduct, precursor_node_indices: Tuple[int]) -> Tuple['FragmentPathway']:
         path = FragmentPathway._collect_path_to_root(fragment_tree, node_id)
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
@@ -379,7 +428,7 @@ class FragmentPathway:
             for i in range(len(p)):
                 if i % 2 == 0:
                     compound = Compound.from_smiles(p[i].smiles)
-                    if precursor_formula_without_hs.normalized.value == adduct_type_without_hs.calc_formula(compound.formula).normalized.value:
+                    if p[i].id in precursor_node_indices:
                         is_precursor = True
                     else:
                         is_precursor = False

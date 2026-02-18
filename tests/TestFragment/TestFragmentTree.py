@@ -187,6 +187,7 @@ class TestFragmentTree(unittest.TestCase):
             fragment_tree_builder = FragmentTreeBuilder(
                 max_depth=3,
                 cleavage_pattern_set=self.cleavage_pattern_set,
+                only_add_min_depth=False,
             )
             fragmenter = Fragmenter(
                 ion_mode=parse_ion_mode("positive"),
@@ -235,5 +236,10 @@ class TestFragmentTree(unittest.TestCase):
                     FragmentPathwayEdge.parse(str(fp_group[0].get_edge(0)))
                 fp_parsed = fragmenter.parse_fragment_pathway_group(fp_group_str)
                 self.assertEqual(len(fp_group), len(fp_parsed))
+                # if len(fp_parsed.with_precursor.shortest) == 0:
+                #     print(f"Failed to find precursor in parsed fragment pathways for peak with m/z {peaks_mz[0]} and intensity {intensity}: {fp_parsed}")
+
+                # self.assertGreater(len(fp_parsed.with_precursor.shortest), 0, msg=f"Failed to find precursor in parsed fragment pathways: {fp_parsed}")
+
             coverage = matched_intensity / sum_intensity if sum_intensity > 0 else 0.0
             pass

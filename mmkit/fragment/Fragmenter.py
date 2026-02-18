@@ -253,9 +253,10 @@ class Fragmenter:
 
 
         precursor_fragment_pathways: List[FragmentPathway] = []
+        precursor_node_indices = tuple({node_index for node_index, _, _ in precursor_node_candidates})
         for node_index, precursor_smiles, at in precursor_node_candidates:
             adduct_type_without_hs = remove_hs_from_adduct(at)
-            pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_formula, at)
+            pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_node_indices)
             precursor_fragment_pathways.extend(pathways)
         precursor_fragment_pathway_group = FragmentPathwayGroup.from_list(precursor_fragment_pathways)
 
@@ -276,7 +277,7 @@ class Fragmenter:
                     pathway_terminal_candidates = formula_to_node_candidates[formula]
                     for node_index, compound, at, adducted_formula in pathway_terminal_candidates:
                         adduct_type_without_hs = remove_hs_from_adduct(at)
-                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_formula_without_hs, adduct_type_without_hs)
+                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_node_indices)
                         fragment_pathways.extend(pathways)
             fragment_pathways_by_peak[i] = FragmentPathwayGroup.from_list(fragment_pathways)
         return precursor_fragment_pathway_group, fragment_pathways_by_peak
