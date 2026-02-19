@@ -60,6 +60,8 @@ class TestFragmentTree(unittest.TestCase):
         fragment_tree_builder = FragmentTreeBuilder(
             max_depth=3,
             cleavage_pattern_set=self.cleavage_pattern_set,
+            only_add_min_depth=True,
+            min_depth_only_from=1,
         )
         fragmenter = Fragmenter(
             ion_mode=parse_ion_mode("positive"),
@@ -89,6 +91,8 @@ class TestFragmentTree(unittest.TestCase):
         fragment_tree_builder = FragmentTreeBuilder(
             max_depth=3,
             cleavage_pattern_set=self.cleavage_pattern_set,
+            only_add_min_depth=True,
+            min_depth_only_from=1,
         )
         compound = self.acetamide
 
@@ -187,7 +191,8 @@ class TestFragmentTree(unittest.TestCase):
             fragment_tree_builder = FragmentTreeBuilder(
                 max_depth=3,
                 cleavage_pattern_set=self.cleavage_pattern_set,
-                only_add_min_depth=False,
+                only_add_min_depth=True,
+                min_depth_only_from=1,
             )
             fragmenter = Fragmenter(
                 ion_mode=parse_ion_mode("positive"),

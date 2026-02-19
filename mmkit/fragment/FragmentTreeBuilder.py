@@ -25,11 +25,19 @@ class FragmentTreeBuilder:
             self,
             max_depth: int,
             cleavage_pattern_set: CleavagePatternSet,
-            only_add_min_depth: bool = True
+            *,
+            only_add_min_depth: bool = True,
+            min_depth_only_from: int = 0,
             ):
+        assert isinstance(max_depth, int) and max_depth > 0, "max_depth must be a positive integer." 
+        assert isinstance(cleavage_pattern_set, CleavagePatternSet), "cleavage_pattern_set must be an instance of CleavagePatternSet."
+        assert isinstance(only_add_min_depth, bool), "only_add_min_depth must be a boolean."
+        assert isinstance(min_depth_only_from, int) and min_depth_only_from >= 0, "min_depth_only_from must be a non-negative integer."
+
         self.max_depth = max_depth
         self.cleavage_pattern_set = cleavage_pattern_set
         self.only_add_min_depth = only_add_min_depth
+        self.min_depth_only_from = min_depth_only_from
 
     @property
     def cleavage_patterns(self) -> List[CleavagePattern]:
@@ -46,7 +54,8 @@ class FragmentTreeBuilder:
         return {
             "max_depth": self.max_depth,
             "cleavage_pattern_set": self.cleavage_pattern_set.to_dict(),
-            "only_add_min_depth": self.only_add_min_depth
+            "only_add_min_depth": self.only_add_min_depth,
+            "min_depth_only_from": self.min_depth_only_from
         }
 
     @classmethod
@@ -55,8 +64,14 @@ class FragmentTreeBuilder:
         cleavage_pattern_set = CleavagePatternSet.from_dict(
             data.get("cleavage_pattern_set", {})
         )
-        only_add_min_depth = bool(data.get("only_add_min_depth", False))
-        return cls(max_depth=max_depth, cleavage_pattern_set=cleavage_pattern_set, only_add_min_depth=only_add_min_depth)
+        only_add_min_depth = bool(data.get("only_add_min_depth", True))
+        min_depth_only_from = int(data.get("min_depth_only_from", 0))
+        return cls(
+            max_depth=max_depth, 
+            cleavage_pattern_set=cleavage_pattern_set, 
+            only_add_min_depth=only_add_min_depth, 
+            min_depth_only_from=min_depth_only_from
+            )
 
     def to_yaml(self, path: str):
         """Save the library to a YAML file."""
@@ -124,7 +139,10 @@ class FragmentTreeBuilder:
                 depth:int,
                 ) -> int:
             edge_key = (source_node_idx, target_node_idx)
-            if self.only_add_min_depth and depth > node_depths[target_node_idx]:
+            if (
+                self.only_add_min_depth 
+                and depth > self.min_depth_only_from + 1
+                and depth > node_depths[target_node_idx]):
                 return -1
             
             if edge_key in edges:
@@ -212,7 +230,8 @@ class FragmentTreeBuilder:
         return FragmentTreeBuilder(
             max_depth=self.max_depth,
             cleavage_pattern_set=self.cleavage_pattern_set,
-            only_add_min_depth=self.only_add_min_depth
+            only_add_min_depth=self.only_add_min_depth,
+            min_depth_only_from=self.min_depth_only_from
         )
     
 
