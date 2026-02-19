@@ -67,6 +67,10 @@ class FragmentPathwayGroup:
         min_length = min(len(p) for p in self.pathways)
         filtered = tuple(p for p in self.pathways if len(p) == min_length)
         return FragmentPathwayGroup(pathways=filtered)
+
+    @staticmethod
+    def empty() -> 'FragmentPathwayGroup':
+        return FragmentPathwayGroup(pathways=tuple())
     
     @staticmethod
     def from_list(

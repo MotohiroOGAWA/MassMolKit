@@ -86,6 +86,8 @@ class TestFragmentTree(unittest.TestCase):
             len(loaded_fragmenter.cleavage_pattern_set)
         )
 
+        FragmentPathwayGroup.parse(str(FragmentPathwayGroup.empty()))
+
     def test_fragment_tree_serialization(self):
         """Test that FragmentTree can be correctly saved to and loaded from JSON."""
         fragment_tree_builder = FragmentTreeBuilder(
