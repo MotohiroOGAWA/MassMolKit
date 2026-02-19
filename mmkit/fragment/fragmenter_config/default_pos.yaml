@@ -9,6 +9,7 @@ fragment_tree_builder:
       charge_mode: any
       version: 1.0
   only_add_min_depth: true
+  min_depth_only_from: 1
 adduct_types:
 - '[M+H]+'
 - '[M+NH4]+'
