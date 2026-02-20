@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union, Sequence, Optional, Iterator
+from typing import List, Tuple, Dict, Union, Sequence, Optional, Iterator
 from dataclasses import dataclass, field
 import json
 import re
@@ -424,14 +424,29 @@ class FragmentPathway:
         return self._formula
 
     @staticmethod
-    def build_pathways_for_node(fragment_tree: FragmentTree, node_id: int, adduct_type: Adduct, precursor_node_indices: Tuple[int]) -> Tuple['FragmentPathway']:
-        path = FragmentPathway._collect_path_to_root(fragment_tree, node_id)
+    def build_pathways_for_node(
+        fragment_tree: FragmentTree, 
+        node_id: int, 
+        adduct_type: Adduct, 
+        precursor_node_indices: Tuple[int],
+        *,
+        max_depth: Optional[int] = None,
+        path_cache: Optional[Dict[Tuple[int, Optional[int]], List[List[Union[FragmentNode, FragmentEdge]]]]] = None,
+        ) -> Tuple['FragmentPathway']:
+
+        cache_key = (node_id, max_depth)
+        if path_cache is not None and cache_key in path_cache:
+            path = path_cache[cache_key]
+        else:
+            path = FragmentPathway._collect_path_to_root(fragment_tree, node_id, max_depth=max_depth)
+            if path_cache is not None:
+                path_cache[cache_key] = path
+
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
             tmp_path = []
             for i in range(len(p)):
                 if i % 2 == 0:
-                    compound = Compound.from_smiles(p[i].smiles)
                     if p[i].id in precursor_node_indices:
                         is_precursor = True
                     else:
@@ -447,13 +462,26 @@ class FragmentPathway:
         return tuple(fragment_pathways)
 
     @staticmethod
-    def _collect_path_to_root(tree:FragmentTree, node_id: int) -> List[List[Union[FragmentNode, FragmentEdge]]]:
+    def _collect_path_to_root(
+        tree: FragmentTree,
+        node_id: int,
+        *,
+        max_depth: Optional[int] = None,
+        current_depth: int = 0,
+    ) -> List[List[Union[FragmentNode, FragmentEdge]]]:
         """
-        Recursively collect all possible paths (as lists of str(node) and str(edge))
-        from the given node up to the root.
+        Recursively collect all possible paths from the given node up to the root.
+
+        Args:
+            tree: FragmentTree instance
+            node_id: current node id
+            max_depth: maximum allowed edge depth (None means unlimited)
+            current_depth: current depth (number of edges from starting node)
+
         Returns:
-            A list of paths, each path being a list of strings ordered from root → current node.
+            A list of paths, each path ordered from root → current node.
         """
+
         node = tree.get_node(node_id)
 
         # Base case: node has no parents (root)
@@ -461,15 +489,25 @@ class FragmentPathway:
         if len(in_edges) == 0:
             return [[node]]
 
-        all_paths: List[List[str]] = []
+        # Depth limit check (edge-based depth)
+        if max_depth is not None and current_depth > max_depth:
+            return []
+
+        all_paths: List[List[Union[FragmentNode, FragmentEdge]]] = []
+
         # Explore all parent nodes
         for in_edge in in_edges:
             parent_node = tree.get_node(in_edge.source_id)
 
-            # Recursively collect paths from this parent
-            parent_paths = FragmentPathway._collect_path_to_root(tree, parent_node.id)
+            # Recursively collect parent paths
+            parent_paths = FragmentPathway._collect_path_to_root(
+                tree,
+                parent_node.id,
+                max_depth=max_depth,
+                current_depth=current_depth + 1,
+            )
 
-            # Append the current edge and node to each parent path
+            # Append current edge and node
             for path in parent_paths:
                 extended_path = path.copy()
                 extended_path.append(in_edge)
@@ -477,7 +515,7 @@ class FragmentPathway:
                 all_paths.append(extended_path)
 
         return all_paths
-    
+
 class FragmentPathwayNode:
     def __init__(self, smiles: str, is_precursor: bool):
         assert isinstance(smiles, str), "smiles must be a string"

@@ -215,7 +215,8 @@ class TestFragmentTree(unittest.TestCase):
             mass_tolerance = AnyDaPpmTolerance(mode="ppm", da_tolerance=0.01, ppm_tolerance=10.0)
             peaks_mz = [mz for mz, intensity in peaks]
             peaks_intensity = [intensity for mz, intensity in peaks]
-            precursor_fragment_pathways, fragment_pathways_by_peak = fragmenter.build_fragment_pathways_by_peak(
+            precursor_fragment_pathways, fragment_pathways_by_peak \
+                = fragmenter.build_fragment_pathways_by_peak(
                 h_fragment_tree=h_fragment_tree,
                 precursor_type=precursor_type,
                 peaks_mz=peaks_mz,

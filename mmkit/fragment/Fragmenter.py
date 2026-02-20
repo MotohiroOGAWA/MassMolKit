@@ -269,6 +269,7 @@ class Fragmenter:
             mass_tolerance=mass_tolerance,
         )
         fragment_pathways_by_peak: List[FragmentPathwayGroup] = [FragmentPathwayGroup.from_list([]) for _ in peaks_mz]
+        path_cache: Dict[Tuple[int, Optional[int]], List[List[Union[FragmentNode, FragmentEdge]]]] = {}
         for i, info in enumerate(assigned_peaks):
             fragment_pathways = []
             if info['n_matches'] > 0:
@@ -276,8 +277,8 @@ class Fragmenter:
                     formula = Formula.parse(formula_str, store_raw=False)
                     pathway_terminal_candidates = formula_to_node_candidates[formula]
                     for node_index, compound, at, adducted_formula in pathway_terminal_candidates:
-                        adduct_type_without_hs = remove_hs_from_adduct(at)
-                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_node_indices)
+                        # adduct_type_without_hs = remove_hs_from_adduct(at)
+                        pathways = FragmentPathway.build_pathways_for_node(h_fragment_tree.tree, node_index, at, precursor_node_indices, max_depth=self.tree_max_depth, path_cache=path_cache)
                         fragment_pathways.extend(pathways)
             fragment_pathways_by_peak[i] = FragmentPathwayGroup.from_list(fragment_pathways)
         return precursor_fragment_pathway_group, fragment_pathways_by_peak
