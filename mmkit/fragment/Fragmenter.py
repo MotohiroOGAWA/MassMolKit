@@ -71,7 +71,15 @@ class Fragmenter:
 
     @property
     def tree_max_depth(self) -> int:
-        return self._fragment_tree_builder.max_depth    
+        return self._fragment_tree_builder.max_depth
+    
+    @property
+    def precursor_depth_limit(self) -> int:
+        return self._fragment_tree_builder.min_depth_only_from
+
+    @property
+    def only_add_min_depth(self) -> bool:
+        return self._fragment_tree_builder.only_add_min_depth 
     
     @property
     def cleavage_pattern_set(self) -> CleavagePatternSet:
