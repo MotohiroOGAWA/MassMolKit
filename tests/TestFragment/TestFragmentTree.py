@@ -102,8 +102,22 @@ class TestFragmentTree(unittest.TestCase):
             compound,
             timeout_seconds=float('inf'),
         )
-        depths = fragment_tree.get_nodes_by_depth()
         self.assertEqual(fragment_tree.smiles, compound.smiles)
+
+
+        depths = fragment_tree.get_nodes_by_depth()
+        self.assertListEqual(depths[0].tolist(), [0])  # Root node only
+        self.assertListEqual(depths[1].tolist(), [1, 2, 3, 4, 5])  # First level fragments
+        self.assertListEqual(depths[2].tolist(), [6, 7, 8])  # Second level fragments
+
+        paths_to_parents = fragment_tree.collect_shortest_paths_to_parents(7, [0, 2], max_depthes={0: 3, 2: 2})
+        self.assertEqual(len(paths_to_parents[0]), 2)
+        self.assertEqual(len(paths_to_parents[2]), 1)
+
+        path_via_any_to_root = fragment_tree.collect_shortest_paths_via_any_to_root(7, [2, 3], max_depth=3)
+        self.assertIsNotNone(path_via_any_to_root)
+        self.assertEqual(path_via_any_to_root[0][0].id, 0)  # Starts with root
+        self.assertEqual(path_via_any_to_root[0][-1].id, 7)  # Ends with target
 
         # ---- Save to HDF5 (overwrite) ----
         tmp_path = os.path.join("tests", "dummy_files", "test_fragment_tree", "tmp_fragment_tree.h5")

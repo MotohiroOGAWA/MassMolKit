@@ -1,5 +1,5 @@
 import os
-from typing import Union, List, Dict, Tuple, Literal, Set, Optional
+from typing import Union, List, Dict, Tuple, Literal, Set, Iterable, Optional
 from dataclasses import dataclass, field
 from collections import deque, defaultdict
 import numpy as np
@@ -11,6 +11,8 @@ from enum import Enum
 
 from ..chem.Compound import Compound
 from ..chem.Formula import Formula
+
+PathItem = Union["FragmentNode", "FragmentEdge"]
 
 @dataclass(frozen=True, init=False)
 class FragmentTree:
@@ -33,10 +35,12 @@ class FragmentTree:
     _out_edge_ids: Optional[np.ndarray] = field(default=None, repr=False)
     _out_edge_indptr: Optional[np.ndarray] = field(default=None, repr=False)
 
+    _node_depth: Optional[np.ndarray] = field(default=None, repr=False, compare=False)
+
     # Per-instance cache (NEVER use {} as a default)
     _path_cache: Dict[
-        Tuple[int, Optional[int]],
-        List[List[Union["FragmentNode", "FragmentEdge"]]]
+        Tuple[int, int, Optional[int]],
+        List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]
     ] = field(default_factory=dict, repr=False, compare=False)
 
     def __init__(
@@ -50,8 +54,9 @@ class FragmentTree:
         in_edge_indptr: Optional[np.ndarray] = None,
         out_edge_ids: Optional[np.ndarray] = None,
         out_edge_indptr: Optional[np.ndarray] = None,
+        node_depth: Optional[np.ndarray] = None,
         path_cache: Optional[
-            Dict[Tuple[int, Optional[int]], List[List[Union["FragmentNode", "FragmentEdge"]]]]
+            Dict[Tuple[int, Optional[int]], List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]]
         ] = None,
     ):
         # --- Validate inputs ---
@@ -74,6 +79,7 @@ class FragmentTree:
         object.__setattr__(self, "_in_edge_indptr", None)
         object.__setattr__(self, "_out_edge_ids", None)
         object.__setattr__(self, "_out_edge_indptr", None)
+        object.__setattr__(self, "_node_depth", node_depth)
 
         # Optional CSR reuse if valid
         if in_edge_ids is not None and in_edge_indptr is not None:
@@ -295,6 +301,7 @@ class FragmentTree:
             in_edge_indptr=self._in_edge_indptr.copy() if self._in_edge_indptr is not None else None,
             out_edge_ids=self._out_edge_ids.copy() if self._out_edge_ids is not None else None,
             out_edge_indptr=self._out_edge_indptr.copy() if self._out_edge_indptr is not None else None,
+            
             path_cache=None,
         )
     
@@ -355,115 +362,493 @@ class FragmentTree:
 
             self._formula_index_map[formula].append(idx)
 
-    def get_nodes_by_depth(self) -> Dict[int, List[int]]:
-        """
-        Return a mapping: depth -> list of node IDs.
-        Depth starts at 0 for the root node(s).
-        If multiple paths reach a node, the minimum depth is used.
-        """
+    def get_root_node_ids(self) -> np.ndarray:
+        """Return node ids with no incoming edges."""
+        if self._in_edge_ids is None or self._in_edge_indptr is None:
+            self._build_edge_adjacency()
+        # in-degree = indptr[i+1] - indptr[i]
+        indeg = (self._in_edge_indptr[1:] - self._in_edge_indptr[:-1])
+        return np.where(indeg == 0)[0].astype(np.int32, copy=False)
 
-        if self.num_nodes == 0:
+    def _build_node_depths(self) -> np.ndarray:
+        """
+        Compute minimal depth (edge distance) from root(s) to every node.
+        Unreachable nodes => -1.
+        """
+        n = self.num_nodes
+        if n == 0:
+            depth = np.zeros((0,), dtype=np.int32)
+            object.__setattr__(self, "_node_depth", depth)
+            return depth
+
+        if self._out_edge_ids is None or self._out_edge_indptr is None or \
+        self._in_edge_ids is None or self._in_edge_indptr is None:
+            self._build_edge_adjacency()
+
+        roots = self.get_root_node_ids()
+        if roots.size == 0:
+            roots = np.asarray([0], dtype=np.int32)
+
+        depth = np.full(n, -1, dtype=np.int32)
+        q = deque()
+
+        # init
+        for r in roots:
+            rr = int(r)
+            if 0 <= rr < n and depth[rr] == -1:
+                depth[rr] = 0
+                q.append(rr)
+
+        edge_index = self._edge_index
+        out_ids = self._out_edge_ids
+        out_ptr = self._out_edge_indptr
+
+        while q:
+            u = q.popleft()
+            nd = int(depth[u]) + 1
+
+            s = int(out_ptr[u])
+            e = int(out_ptr[u + 1])
+
+            # out edge ids are contiguous; iterate without tolist()
+            for ei in out_ids[s:e]:
+                v = int(edge_index[ei, 1])
+                if depth[v] == -1: 
+                    depth[v] = nd
+                    q.append(v)
+
+        object.__setattr__(self, "_node_depth", depth)
+
+    @property
+    def node_depths(self) -> np.ndarray:
+        """
+        Numpy array [N] of minimal depth from root(s).
+        Computed lazily and cached per instance.
+        Unreachable nodes => -1.
+        """
+        if self._node_depth is None:
+            self._build_node_depths()
+        return self._node_depth
+
+    def get_nodes_by_depth(self) -> Dict[int, np.ndarray]:
+        d = self.node_depths
+        if d.size == 0:
+            return {}
+        valid = d >= 0
+        if not np.any(valid):
             return {}
 
-        # --- 1) Find root nodes (nodes without parents) ---
-        root_id = 0
+        max_d = int(d[valid].max())
+        out: Dict[int, np.ndarray] = {}
+        for depth in range(max_d + 1):
+            ids = np.flatnonzero(d == depth)
+            if ids.size:
+                out[depth] = ids.astype(np.int32, copy=False)
+        return out
 
-        # --- 2) Initialize BFS ---
-        queue = deque()
-        depth_map = {}  # node_id -> depth
-
-        # Initialize all roots as depth=0
-        queue.append((root_id, 0))
-
-        # --- 3) BFS to compute minimal depth of each node ---
-        while queue:
-            node_id, depth = queue.popleft()
-
-            node = self.get_node(node_id)
-            for child_node in self.get_child_nodes(node_id):
-                child_id = child_node.id
-                # If unassigned, assign depth+1
-                if child_id not in depth_map:
-                    depth_map[child_id] = depth + 1
-                    queue.append((child_id, depth + 1))
-
-                # If already assigned, keep the minimum depth
-                elif depth + 1 < depth_map[child_id]:
-                    depth_map[child_id] = depth + 1
-                    queue.append((child_id, depth + 1))
-
-        # --- 4) Convert depth_map → depth -> list[node_id] ---
-        depth_to_nodes = defaultdict(list)
-        for node_id, depth in depth_map.items():
-            depth_to_nodes[depth].append(node_id)
-
-        # Sort each node list for consistency
-        return {d: sorted(ids) for d, ids in depth_to_nodes.items()}
-
-    def collect_paths_to_root(
+    def collect_shortest_paths_to_parents(
         self,
-        node_id: int,
+        child_id: int,
+        parent_ids: Iterable[int],
         *,
-        max_depth: Optional[int] = None,
-        current_depth: int = 0,
+        max_depthes: Optional[Dict[int, Optional[int]]] = None,
         use_cache: bool = True,
-    ) -> List[List[Union['FragmentNode', 'FragmentEdge']]]:
+    ) -> Dict[int, List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]]:
         """
-        Collect all possible paths from root to the given node.
+        Collect ALL shortest path(s) for each parent in parent_ids -> ... -> child_id
+        using a single reverse BFS (child -> parents via in_edges).
 
-        Args:
-            node_id: target node id
-            max_depth: maximum allowed edge depth
-            current_depth: internal recursion depth counter
-            use_cache: whether to use internal memoization cache
+        Caching policy (IMPORTANT):
+        - Cache key is ALWAYS (child_id, parent_id, max_depth) where max_depth is the
+            per-parent depth limit (can be None).
+        - If a parent is already cached, we do NOT include it in BFS targets.
+        - This function merges cached results + newly computed results.
 
-        Returns:
-            List of paths ordered from root → node
+        max_depthes:
+            Optional dict {parent_id: max_allowed_depth (edges)}.
+            If missing or None: unlimited for that parent.
+            Parents not reachable within their limit are returned as empty list (or omitted; see below).
         """
 
-        cache_key = (node_id, max_depth)
+        n = self.num_nodes
+        assert 0 <= child_id < n, "Invalid child_id"
 
-        # Use cache only at top-level call
-        if use_cache and current_depth == 0 and cache_key in self._path_cache:
-            return self._path_cache[cache_key]
+        parent_set = {int(pid) for pid in parent_ids}
+        if not parent_set:
+            return {}
 
-        node = self.get_node(node_id)
-        in_edges = self.get_in_edges(node_id)
+        for pid in parent_set:
+            assert 0 <= pid < n, f"Invalid parent_id: {pid}"
 
-        # Root node
-        if len(in_edges) == 0:
-            result = [[node]]
-            if use_cache and current_depth == 0:
-                self._path_cache[cache_key] = result
+        # Normalize per-parent limits (None means unlimited)
+        limits: Dict[int, Optional[int]] = {}
+        if max_depthes is None:
+            for pid in parent_set:
+                limits[pid] = None
+        else:
+            for pid in parent_set:
+                limits[pid] = max_depthes.get(pid, None)
+
+        def within_limit(pid: int, d: int) -> bool:
+            lim = limits.get(pid, None)
+            return True if lim is None else (d <= lim)
+
+        # --- 0) Serve from cache when possible, and build the remaining target set ---
+        result: Dict[int, List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]] = {}
+        remaining: Set[int] = set()
+
+        if use_cache:
+            for pid in parent_set:
+                ck = (int(child_id), int(pid), limits[pid])
+                if ck in self._path_cache:
+                    result[pid] = self._path_cache[ck]
+                else:
+                    remaining.add(pid)
+        else:
+            remaining = set(parent_set)
+
+        # If everything was cached, we are done.
+        if not remaining:
             return result
 
-        # Depth limit
-        if max_depth is not None and current_depth > max_depth:
+        # --- 1) Reverse BFS from child (compute distances upward) ---
+        dist = np.full(n, -1, dtype=np.int32)
+        dist[child_id] = 0
+        q = deque([child_id])
+
+        # nexts[p] contains all (nxt, edge) such that p --edge--> nxt and
+        # dist[p] == dist[nxt] + 1 (on some shortest path to child)
+        nexts: Dict[int, List[Tuple[int, "FragmentEdge"]]] = defaultdict(list)
+
+        # Track shortest distance for newly requested parents only
+        found_dist: Dict[int, int] = {}
+
+        # To stop early safely, we need to know when all remaining parents are either:
+        #   - found within limit, OR
+        #   - impossible within their limit
+        stop_depth: Optional[int] = None
+
+        # Special case: child itself is a requested parent
+        if child_id in remaining and within_limit(child_id, 0):
+            found_dist[child_id] = 0
+            # Note: we still may need BFS for other parents.
+
+        while q:
+            x = q.popleft()
+            dx = int(dist[x])
+
+            # Safe pruning: once we know stop_depth, no need to expand deeper layers.
+            if stop_depth is not None and dx >= stop_depth:
+                continue
+
+            # Expand incoming edges
+            for e in self.get_in_edges(x):  # e: (p -> x)
+                p = int(e.source_id)
+                nd = dx + 1
+
+                # Standard BFS discovery
+                if dist[p] == -1:
+                    dist[p] = nd
+                    q.append(p)
+
+                # Record shortest transitions for reconstruction
+                if dist[p] == nd:
+                    nexts[p].append((x, e))
+
+                # If p is one of the remaining target parents and first time found within limit
+                if p in remaining and p not in found_dist and within_limit(p, nd):
+                    found_dist[p] = nd
+
+            # Decide if we can stop (only when stop_depth is unknown)
+            if stop_depth is None:
+                unresolved = []
+                for pid in remaining:
+                    if pid in found_dist:
+                        continue
+                    lim = limits.get(pid, None)
+                    if lim is None:
+                        unresolved.append(pid)  # unlimited and not found yet -> must continue
+                    else:
+                        # If current frontier depth dx already reached lim, then any new discovery
+                        # would have nd=dx+1 > lim -> impossible from now on
+                        if dx < lim:
+                            unresolved.append(pid)
+
+                if not unresolved:
+                    # All remaining parents are either found or impossible within limits.
+                    stop_depth = max(found_dist.values()) if found_dist else 0
+
+        # --- 2) Reconstruct ALL shortest paths for each newly found parent ---
+        def build_paths_for_parent(pid: int) -> List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]:
+            if dist[pid] == -1 or not within_limit(pid, int(dist[pid])):
+                return []
+
+            paths: List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]] = []
+
+            def dfs(curr: int, acc: List[Union["FragmentNode", "FragmentEdge"]]) -> None:
+                if curr == child_id:
+                    paths.append(tuple(acc))
+                    return
+                for nxt, edge in nexts.get(curr, []):
+                    # Stay strictly on shortest layers: dist[curr] == dist[nxt] + 1
+                    if dist[curr] == dist[nxt] + 1:
+                        dfs(nxt, acc + [edge, self.get_node(nxt)])
+
+            dfs(pid, [self.get_node(pid)])
+            return paths
+
+        # Fill results for remaining parents (found or not)
+        for pid in remaining:
+            if pid == child_id and within_limit(pid, 0):
+                paths = [(self.get_node(child_id),)]
+            else:
+                paths = build_paths_for_parent(pid)
+
+            # Store in output only if non-empty (same behavior as your current code),
+            # but we DO cache empty results too, so next call can skip work.
+            if paths:
+                result[pid] = paths
+
+            if use_cache:
+                ck = (int(child_id), int(pid), limits[pid])
+                self._path_cache[ck] = paths
+
+        return result
+
+    def collect_shortest_paths_to_root(
+        self,
+        child_id: int,
+        *,
+        max_depth: Optional[int] = None,
+        use_cache: bool = True,
+    ) -> List[Tuple[Union['FragmentNode', 'FragmentEdge'], ...]]:
+        """
+        Collect all shortest path(s) from root(0) -> ... -> child_id.
+
+        If max_depth is provided, the path length (edges) must be <= max_depth.
+        """
+
+        # Use the multi-parent API with a single parent (0).
+        max_depthes = None if max_depth is None else {0: int(max_depth)}
+
+        d = self.collect_shortest_paths_to_parents(
+            child_id=child_id,
+            parent_ids=[0],
+            max_depthes=max_depthes,
+            use_cache=use_cache,
+        )
+        return d.get(0, [])
+    
+    def collect_shortest_paths_via_any_to_root(
+        self,
+        node_id: int,
+        via_node_ids: Iterable[int],
+        *,
+        max_depth: Optional[int] = None,
+        use_cache: bool = True,
+    ) -> List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]:
+        """
+        Return ALL globally shortest paths from root(0) to node_id that pass through
+        at least one via in via_node_ids (OR condition).
+
+        If max_depth is provided, total edge length must be <= max_depth.
+
+        Returns:
+            List of paths (Node, Edge, Node, ...), possibly empty.
+        """
+
+        def _edge_len(p: Tuple[Union["FragmentNode", "FragmentEdge"], ...]) -> int:
+            return (len(p) - 1) // 2
+
+        def _concat(
+            a: Tuple[Union["FragmentNode", "FragmentEdge"], ...],
+            b: Tuple[Union["FragmentNode", "FragmentEdge"], ...],
+        ) -> Tuple[Union["FragmentNode", "FragmentEdge"], ...]:
+            # a: 0 -> ... -> via
+            # b: via -> ... -> node
+            return a + b[1:]  # drop duplicated via node
+
+        n = self.num_nodes
+        assert 0 <= node_id < n, "Invalid node_id"
+        assert n > 0, "Empty graph"
+
+        via_set: Set[int] = {int(v) for v in via_node_ids}
+        if not via_set:
+            return []
+        for v in via_set:
+            assert 0 <= v < n, f"Invalid via_node_id: {v}"
+
+        depths = self.node_depths  # minimal depth from root(0), unreachable => -1
+
+        # --- Build per-via max depths for (via -> ... -> node) using node_depths ---
+        per_via_max_depthes: Optional[Dict[int, Optional[int]]] = None
+        valid_vias: List[int] = []
+
+        if max_depth is None:
+            for via in via_set:
+                if int(depths[via]) >= 0:
+                    valid_vias.append(via)
+            if not valid_vias:
+                return []
+        else:
+            K = int(max_depth)
+            per_via_max_depthes = {}
+            for via in via_set:
+                dv = int(depths[via])
+                if dv < 0:
+                    continue
+                rem = K - dv
+                if rem < 0:
+                    continue
+                per_via_max_depthes[via] = rem
+                valid_vias.append(via)
+            if not valid_vias:
+                return []
+
+        # --- 1) Collect shortest via->node path sets in ONE BFS ---
+        via_to_node: Dict[int, List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]]] = (
+            self.collect_shortest_paths_to_parents(
+                child_id=node_id,
+                parent_ids=valid_vias,
+                max_depthes=per_via_max_depthes,
+                use_cache=use_cache,
+            )
+        )
+        if not via_to_node:
             return []
 
-        all_paths: List[List[Union[FragmentNode, FragmentEdge]]] = []
+        # --- 2) Compute global minimal total length, and gather best vias ---
+        min_total: Optional[int] = None
+        best_vias: List[int] = []
+        via_to_node_len: Dict[int, int] = {}
 
-        for in_edge in in_edges:
-            parent_id = in_edge.source_id
+        for via, paths in via_to_node.items():
+            if not paths:
+                continue
 
-            parent_paths = self.collect_paths_to_root(
-                parent_id,
-                max_depth=max_depth,
-                current_depth=current_depth + 1,
-                use_cache=use_cache,  # propagate flag
+            dv = int(depths[via])
+            if dv < 0:
+                continue
+
+            dvn = _edge_len(paths[0])  # all shortest paths share this length
+            total = dv + dvn
+            if max_depth is not None and total > int(max_depth):
+                continue
+
+            via_to_node_len[via] = dvn
+
+            if min_total is None or total < min_total:
+                min_total = total
+                best_vias = [via]
+            elif total == min_total:
+                best_vias.append(via)
+
+        if min_total is None:
+            return []
+
+        # --- 3) For each best via, get root->via shortest path sets (only those vias) ---
+        # Then concatenate ALL combinations to produce ALL globally shortest paths.
+        out: List[Tuple[Union["FragmentNode", "FragmentEdge"], ...]] = []
+
+        # Optional: deduplicate if different combos yield identical tuple objects
+        seen: Set[str] = set()
+
+        for via in best_vias:
+            # root->via shortest paths; cap by depth(via) for efficiency
+            root_dict = self.collect_shortest_paths_to_parents(
+                child_id=via,
+                parent_ids=[0],
+                max_depthes={0: int(depths[via])},
+                use_cache=use_cache,
             )
+            root_paths = root_dict.get(0, [])
+            if not root_paths:
+                continue
 
-            for path in parent_paths:
-                extended_path = path.copy()
-                extended_path.append(in_edge)
-                extended_path.append(node)
-                all_paths.append(extended_path)
+            vn_paths = via_to_node.get(via, [])
+            if not vn_paths:
+                continue
 
-        # Store cache only at top-level
-        if use_cache and current_depth == 0:
-            self._path_cache[cache_key] = all_paths
+            # Combine all shortest root->via and all shortest via->node
+            for rv in root_paths:
+                for vn in vn_paths:
+                    full = _concat(rv, vn)
 
-        return all_paths
+                    # Enforce total length == min_total (and max_depth if given)
+                    if _edge_len(full) != int(min_total):
+                        continue
+                    if max_depth is not None and _edge_len(full) > int(max_depth):
+                        continue
+
+                    key = repr(full)
+                    if key not in seen:
+                        seen.add(key)
+                        out.append(full)
+
+        return out
+
+    # def collect_paths_to_root(
+    #     self,
+    #     node_id: int,
+    #     *,
+    #     max_depth: Optional[int] = None,
+    #     current_depth: int = 0,
+    #     use_cache: bool = True,
+    # ) -> List[Tuple[Union['FragmentNode', 'FragmentEdge'], ...]]:
+    #     """
+    #     Collect all possible paths from root to the given node.
+
+    #     Args:
+    #         node_id: target node id
+    #         max_depth: maximum allowed edge depth
+    #         current_depth: internal recursion depth counter
+    #         use_cache: whether to use internal memoization cache
+
+    #     Returns:
+    #         List of paths ordered from root → node
+    #     """
+
+    #     cache_key = (node_id, 0, max_depth)
+
+    #     # Use cache only at top-level call
+    #     if use_cache and current_depth == 0 and cache_key in self._path_cache:
+    #         return self._path_cache[cache_key]
+
+    #     node = self.get_node(node_id)
+    #     in_edges = self.get_in_edges(node_id)
+
+    #     # Root node
+    #     if len(in_edges) == 0:
+    #         result = [(node,)]
+    #         if use_cache and current_depth == 0:
+    #             self._path_cache[cache_key] = result
+    #         return result
+
+    #     # Depth limit
+    #     if max_depth is not None and current_depth > max_depth:
+    #         return []
+
+    #     all_paths: List[Tuple[Union[FragmentNode, FragmentEdge], ...]] = []
+
+    #     for in_edge in in_edges:
+    #         parent_id = in_edge.source_id
+
+    #         parent_paths = self.collect_paths_to_root(
+    #             parent_id,
+    #             max_depth=max_depth,
+    #             current_depth=current_depth + 1,
+    #             use_cache=use_cache,  # propagate flag
+    #         )
+
+    #         for path in parent_paths:
+    #             extended_path = path + (in_edge, node)
+    #             all_paths.append(extended_path)
+
+    #     # Store cache only at top-level
+    #     if use_cache and current_depth == 0:
+    #         self._path_cache[cache_key] = all_paths
+
+    #     return all_paths
 
     # ----------------------------
     # HDF5 helpers

@@ -433,8 +433,9 @@ class FragmentPathway:
         max_depth: Optional[int] = None,
         ) -> Tuple['FragmentPathway']:
 
-        cache_key = (node_id, max_depth)
-        path = fragment_tree.collect_paths_to_root(node_id, max_depth=max_depth)
+        path = fragment_tree.collect_shortest_paths_via_any_to_root(node_id, precursor_node_indices, max_depth=max_depth)
+        if len(path) == 0:
+            path = fragment_tree.collect_shortest_paths_to_root(node_id, max_depth=max_depth)
 
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
