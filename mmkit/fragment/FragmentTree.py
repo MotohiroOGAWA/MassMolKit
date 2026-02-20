@@ -1,5 +1,6 @@
 import os
 from typing import Union, List, Dict, Tuple, Literal, Set, Optional
+from dataclasses import dataclass, field
 from collections import deque, defaultdict
 import numpy as np
 import dill
@@ -11,17 +12,32 @@ from enum import Enum
 from ..chem.Compound import Compound
 from ..chem.Formula import Formula
 
-
+@dataclass(frozen=True, init=False)
 class FragmentTree:
     """
     FragmentTree class to represent a tree of fragments.
+
+    Note:
+        frozen=True prevents attribute reassignment, but does NOT prevent
+        mutation of mutable objects (e.g., numpy arrays or dict contents).
     """
-    class StructureType(Enum):
-        """
-        Enum to represent the structure type of the fragment tree.
-        """
-        ORIGINAL = "original"
-        TOPOLOGICAL = "topological"
+
+    _smiles: str
+    _node_smiles: np.ndarray            # [N]
+    _edge_index: np.ndarray             # [E, 2]
+    _edge_step_flat: np.ndarray         # [K]
+    _edge_step_indptr: np.ndarray       # [E+1]
+
+    _in_edge_ids: Optional[np.ndarray] = field(default=None, repr=False)
+    _in_edge_indptr: Optional[np.ndarray] = field(default=None, repr=False)
+    _out_edge_ids: Optional[np.ndarray] = field(default=None, repr=False)
+    _out_edge_indptr: Optional[np.ndarray] = field(default=None, repr=False)
+
+    # Per-instance cache (NEVER use {} as a default)
+    _path_cache: Dict[
+        Tuple[int, Optional[int]],
+        List[List[Union["FragmentNode", "FragmentEdge"]]]
+    ] = field(default_factory=dict, repr=False, compare=False)
 
     def __init__(
         self,
@@ -30,52 +46,68 @@ class FragmentTree:
         edge_index: np.ndarray,             # [E, 2]
         edge_step_flat: np.ndarray,         # [K]
         edge_step_indptr: np.ndarray,       # [E+1]
-        in_edge_ids: Optional[np.ndarray] = None,      # [Ein]
-        in_edge_indptr: Optional[np.ndarray] = None,   # [N+1]
-        out_edge_ids: Optional[np.ndarray] = None,     # [Eout]
-        out_edge_indptr: Optional[np.ndarray] = None,  # [N+1]
+        in_edge_ids: Optional[np.ndarray] = None,
+        in_edge_indptr: Optional[np.ndarray] = None,
+        out_edge_ids: Optional[np.ndarray] = None,
+        out_edge_indptr: Optional[np.ndarray] = None,
+        path_cache: Optional[
+            Dict[Tuple[int, Optional[int]], List[List[Union["FragmentNode", "FragmentEdge"]]]]
+        ] = None,
     ):
+        # --- Validate inputs ---
         assert node_smiles.ndim == 1, "node_smiles must be a 1D array"
-        assert edge_index.ndim == 2 and edge_index.shape[1] == 2, "edge_index must be a 2D array with shape [E, 2]"
-        assert edge_step_indptr.ndim == 1 and edge_step_indptr.shape[0] == edge_index.shape[0] + 1, "edge_step_indptr must be a 1D array with length E+1"
+        assert edge_index.ndim == 2 and edge_index.shape[1] == 2, "edge_index must have shape [E, 2]"
+        assert edge_step_indptr.ndim == 1 and edge_step_indptr.shape[0] == edge_index.shape[0] + 1, \
+            "edge_step_indptr must be length E+1"
         assert edge_step_flat.ndim == 1, "edge_step_flat must be a 1D array"
+        assert edge_step_indptr[-1] == len(edge_step_flat), \
+            "edge_step_indptr last element must equal len(edge_step_flat)"
 
-        assert edge_index.shape[0] + 1 == len(edge_step_indptr), "edge_step_indptr length must be E+1"
-        assert edge_index.shape[1] == 2, "edge_index must have shape [E, 2]"
-        assert edge_step_indptr[-1] == len(edge_step_flat), "edge_step_indptr last element must equal length of edge_step_flat"
-        
-        self._smiles = smiles
-        self._node_smiles = node_smiles
-        self._edge_index = edge_index
-        self._edge_step_flat = edge_step_flat
-        self._edge_step_indptr = edge_step_indptr
+        # --- Assign (required for frozen dataclass) ---
+        object.__setattr__(self, "_smiles", str(smiles))
+        object.__setattr__(self, "_node_smiles", node_smiles)
+        object.__setattr__(self, "_edge_index", edge_index)
+        object.__setattr__(self, "_edge_step_flat", edge_step_flat)
+        object.__setattr__(self, "_edge_step_indptr", edge_step_indptr)
 
-        self._in_edge_ids = None
-        self._in_edge_indptr = None
-        self._out_edge_ids = None
-        self._out_edge_indptr = None
+        object.__setattr__(self, "_in_edge_ids", None)
+        object.__setattr__(self, "_in_edge_indptr", None)
+        object.__setattr__(self, "_out_edge_ids", None)
+        object.__setattr__(self, "_out_edge_indptr", None)
 
+        # Optional CSR reuse if valid
         if in_edge_ids is not None and in_edge_indptr is not None:
             if (
                 in_edge_indptr.ndim == 1 and
-                in_edge_indptr.shape[0] == len(self._node_smiles) + 1 and
+                in_edge_indptr.shape[0] == len(node_smiles) + 1 and
                 in_edge_ids.ndim == 1 and
                 in_edge_indptr[0] == 0 and
                 in_edge_indptr[-1] == len(in_edge_ids)
             ):
-                self._in_edge_ids = in_edge_ids
-                self._in_edge_indptr = in_edge_indptr
+                object.__setattr__(self, "_in_edge_ids", in_edge_ids)
+                object.__setattr__(self, "_in_edge_indptr", in_edge_indptr)
 
         if out_edge_ids is not None and out_edge_indptr is not None:
             if (
                 out_edge_indptr.ndim == 1 and
-                out_edge_indptr.shape[0] == len(self._node_smiles) + 1 and
+                out_edge_indptr.shape[0] == len(node_smiles) + 1 and
                 out_edge_ids.ndim == 1 and
                 out_edge_indptr[0] == 0 and
                 out_edge_indptr[-1] == len(out_edge_ids)
             ):
-                self._out_edge_ids = out_edge_ids
-                self._out_edge_indptr = out_edge_indptr
+                object.__setattr__(self, "_out_edge_ids", out_edge_ids)
+                object.__setattr__(self, "_out_edge_indptr", out_edge_indptr)
+
+        # Per-instance cache (do not share across instances)
+        if path_cache is None:
+            object.__setattr__(self, "_path_cache", {})
+        else:
+            object.__setattr__(self, "_path_cache", path_cache)
+
+    # Optional convenience: safe even under frozen=True (mutates dict contents)
+    def clear_path_cache(self) -> None:
+        """Clear the internal path cache."""
+        self._path_cache.clear()
 
     def __repr__(self):
         return f"FragmentTree(compound={self._smiles}, nodes={self.num_nodes}, edges={self.num_edges})"
@@ -101,10 +133,10 @@ class FragmentTree:
         e = self.num_edges
 
         if e == 0:
-            self._in_edge_ids = np.asarray([], dtype=np.int32)
-            self._in_edge_indptr = np.zeros(n + 1, dtype=np.int64)
-            self._out_edge_ids = np.asarray([], dtype=np.int32)
-            self._out_edge_indptr = np.zeros(n + 1, dtype=np.int64)
+            object.__setattr__(self, "_in_edge_ids", np.asarray([], dtype=np.int32))
+            object.__setattr__(self, "_in_edge_indptr", np.zeros(n + 1, dtype=np.int64))
+            object.__setattr__(self, "_out_edge_ids", np.asarray([], dtype=np.int32))
+            object.__setattr__(self, "_out_edge_indptr", np.zeros(n + 1, dtype=np.int64))
             return
 
         src = self._edge_index[:, 0].astype(np.int32, copy=False)
@@ -121,8 +153,8 @@ class FragmentTree:
         in_indptr[0] = 0
         np.cumsum(in_counts, out=in_indptr[1:])
 
-        self._in_edge_ids = in_edge_ids_sorted
-        self._in_edge_indptr = in_indptr
+        object.__setattr__(self, "_in_edge_ids", in_edge_ids_sorted)
+        object.__setattr__(self, "_in_edge_indptr", in_indptr)
 
         # --- Outgoing edges (group by src) ---
         order_out = np.argsort(src, kind="mergesort")
@@ -134,8 +166,8 @@ class FragmentTree:
         out_indptr[0] = 0
         np.cumsum(out_counts, out=out_indptr[1:])
 
-        self._out_edge_ids = out_edge_ids_sorted
-        self._out_edge_indptr = out_indptr
+        object.__setattr__(self, "_out_edge_ids", out_edge_ids_sorted)
+        object.__setattr__(self, "_out_edge_indptr", out_indptr)
 
     @staticmethod
     def empty(compound: Compound) -> 'FragmentTree':
@@ -252,10 +284,7 @@ class FragmentTree:
         child_node_ids = self._edge_index[out_edge_ids, 1]
         return [self.get_node(int(cid)) for cid in child_node_ids]
     
-    def copy(self) -> 'FragmentTree':
-        """
-        Create a copy of the FragmentTree.
-        """
+    def copy(self) -> "FragmentTree":
         return FragmentTree(
             smiles=self._smiles,
             node_smiles=self._node_smiles.copy(),
@@ -266,6 +295,7 @@ class FragmentTree:
             in_edge_indptr=self._in_edge_indptr.copy() if self._in_edge_indptr is not None else None,
             out_edge_ids=self._out_edge_ids.copy() if self._out_edge_ids is not None else None,
             out_edge_indptr=self._out_edge_indptr.copy() if self._out_edge_indptr is not None else None,
+            path_cache=None,
         )
     
     @staticmethod
@@ -369,6 +399,71 @@ class FragmentTree:
 
         # Sort each node list for consistency
         return {d: sorted(ids) for d, ids in depth_to_nodes.items()}
+
+    def collect_paths_to_root(
+        self,
+        node_id: int,
+        *,
+        max_depth: Optional[int] = None,
+        current_depth: int = 0,
+        use_cache: bool = True,
+    ) -> List[List[Union['FragmentNode', 'FragmentEdge']]]:
+        """
+        Collect all possible paths from root to the given node.
+
+        Args:
+            node_id: target node id
+            max_depth: maximum allowed edge depth
+            current_depth: internal recursion depth counter
+            use_cache: whether to use internal memoization cache
+
+        Returns:
+            List of paths ordered from root → node
+        """
+
+        cache_key = (node_id, max_depth)
+
+        # Use cache only at top-level call
+        if use_cache and current_depth == 0 and cache_key in self._path_cache:
+            return self._path_cache[cache_key]
+
+        node = self.get_node(node_id)
+        in_edges = self.get_in_edges(node_id)
+
+        # Root node
+        if len(in_edges) == 0:
+            result = [[node]]
+            if use_cache and current_depth == 0:
+                self._path_cache[cache_key] = result
+            return result
+
+        # Depth limit
+        if max_depth is not None and current_depth > max_depth:
+            return []
+
+        all_paths: List[List[Union[FragmentNode, FragmentEdge]]] = []
+
+        for in_edge in in_edges:
+            parent_id = in_edge.source_id
+
+            parent_paths = self.collect_paths_to_root(
+                parent_id,
+                max_depth=max_depth,
+                current_depth=current_depth + 1,
+                use_cache=use_cache,  # propagate flag
+            )
+
+            for path in parent_paths:
+                extended_path = path.copy()
+                extended_path.append(in_edge)
+                extended_path.append(node)
+                all_paths.append(extended_path)
+
+        # Store cache only at top-level
+        if use_cache and current_depth == 0:
+            self._path_cache[cache_key] = all_paths
+
+        return all_paths
 
     # ----------------------------
     # HDF5 helpers

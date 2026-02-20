@@ -431,16 +431,10 @@ class FragmentPathway:
         precursor_node_indices: Tuple[int],
         *,
         max_depth: Optional[int] = None,
-        path_cache: Optional[Dict[Tuple[int, Optional[int]], List[List[Union[FragmentNode, FragmentEdge]]]]] = None,
         ) -> Tuple['FragmentPathway']:
 
         cache_key = (node_id, max_depth)
-        if path_cache is not None and cache_key in path_cache:
-            path = path_cache[cache_key]
-        else:
-            path = FragmentPathway._collect_path_to_root(fragment_tree, node_id, max_depth=max_depth)
-            if path_cache is not None:
-                path_cache[cache_key] = path
+        path = fragment_tree.collect_paths_to_root(node_id, max_depth=max_depth)
 
         fragment_pathways: List[FragmentPathway] = []
         for p in path:
