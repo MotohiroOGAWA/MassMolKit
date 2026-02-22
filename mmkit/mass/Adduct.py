@@ -211,6 +211,14 @@ class Adduct:
             prefer_charge=True
         )
 
+    def get_formula_count(self, formula: Formula) -> int:
+        """
+        Return the count of a specific Formula in this Adduct.
+        Positive → adduct_in
+        Negative → adduct_out
+        """
+        return self._adduct_formulas.get(formula, 0)
+
     def copy(self) -> "Adduct":
         """
         Create a copy of the adduct.
