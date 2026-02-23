@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, OrderedDict, Literal
+from typing import Dict, List, Tuple, OrderedDict, Literal, Union, overload
 import re
 from rdkit import Chem
 from collections import defaultdict
@@ -211,12 +211,34 @@ class Adduct:
             prefer_charge=True
         )
 
-    def get_formula_count(self, formula: Formula) -> int:
+    @overload
+    def get_formula_count(self, formula: Formula) -> int: ...
+        
+    @overload
+    def get_formula_count(self, formula: str) -> int: ...
+
+    def get_formula_count(self, formula: Union[Formula, str]) -> int:
         """
         Return the count of a specific Formula in this Adduct.
-        Positive → adduct_in
-        Negative → adduct_out
+        
+        Args:
+            formula:
+                - Formula instance
+                - Formula string (will be parsed via Formula.parse)
+
+        Returns:
+            Positive value → adduct_in
+            Negative value → adduct_out
+            0 if not present
         """
+
+        if isinstance(formula, str):
+            formula = Formula.parse(formula)
+        elif not isinstance(formula, Formula):
+            raise TypeError(
+                f"formula must be Formula or str, got {type(formula)}"
+            )
+
         return self._adduct_formulas.get(formula, 0)
 
     def copy(self) -> "Adduct":
