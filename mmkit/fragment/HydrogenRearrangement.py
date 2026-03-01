@@ -12,7 +12,10 @@ import json
 import inspect
 import yaml
 
+from mnt.Cores.MassMolKit.mmkit.chem import Formula
+
 from ..chem.Compound import Compound
+from ..mass.Adduct import Adduct
 from .FragmentResult import FragmentResult, FragmentProduct
 
 class RuleBase:
@@ -317,6 +320,18 @@ class HydrogenRearrangement:
         }
 
         return tuple(sorted(total_dh))
+
+    @property
+    def neutral_total_dh_adducts(self) -> Tuple[Adduct, ...]:
+        adducts = []
+        for dh in self.neutral_total_dh_candidates:
+            if dh == 0:
+                adducts.append(Adduct.parse("[M]"))
+            elif dh > 0:
+                adducts.append(Adduct.parse(f"[M+{dh}H]"))
+            else:  # dh < 0
+                adducts.append(Adduct.parse(f"[M{dh}H]"))
+        return tuple(adducts)
     
     def evaluate(self, compound: Compound) -> Dict[str, Tuple[bool, ...]]:
         """
