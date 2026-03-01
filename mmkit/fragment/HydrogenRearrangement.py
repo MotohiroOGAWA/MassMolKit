@@ -12,8 +12,6 @@ import json
 import inspect
 import yaml
 
-from mnt.Cores.MassMolKit.mmkit.chem import Formula
-
 from ..chem.Compound import Compound
 from ..mass.Adduct import Adduct
 from .FragmentResult import FragmentResult, FragmentProduct
