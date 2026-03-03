@@ -248,7 +248,8 @@ class Fragmenter:
             
             ion_adduct_pairs: List[Adduct] = list(set(list(ion_adducts)+list(hs_ion_adducts)))
             ion_adduct_with_hs_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(ion_adduct_pairs, hs_neutral_adducts)]))
-            adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(ion_adduct_with_hs_pairs, [neutral_adduct])]))
+            adduct_pairs = ion_adduct_with_hs_pairs
+            # adduct_pairs = list(set([ap.add_prefer_self(na) for ap, na in itertools.product(ion_adduct_with_hs_pairs, [neutral_adduct])]))
             compound = Compound.from_smiles(node.smiles)
             f = compound.formula
             for a in adduct_pairs:
