@@ -219,6 +219,7 @@ class Fragmenter:
         
         precursor_compound = Compound.from_smiles(h_fragment_tree.tree.smiles)
         precursor_formula = precursor_type.calc_formula(precursor_compound.formula).normalized
+        # precursor_formula_with_main_adduct = main_adduct_type.calc_formula(precursor_compound.formula).normalized
         precursor_type_without_hs = remove_hs_from_adduct(precursor_type)
         precursor_formula_without_hs = precursor_type_without_hs.calc_formula(precursor_compound.formula).normalized
         
@@ -254,7 +255,8 @@ class Fragmenter:
                 af = a.calc_formula(f)
                 formula_to_node_candidates[af.normalized].append((node_index, compound, a, af))
 
-            for a in ion_adduct_with_hs_pairs:
+            for a in hs_neutral_adducts:
+                a = main_adduct_type.add_prefer_self(a)
                 af = a.calc_formula(f)
                 if af.normalized.value == precursor_formula.normalized.value:
                     precursor_node_candidates.add((node_index, compound.smiles, a))
