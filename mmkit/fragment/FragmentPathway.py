@@ -349,7 +349,7 @@ class FragmentPathwayGroup:
 
 @dataclass(frozen=True)
 class FragmentPathway:
-    path: Tuple[Union['FragmentPathwayNode', 'FragmentPathwayEdge']]
+    path: Tuple[Union['FragmentPathwayNode', 'FragmentPathwayEdge'], ...]
     adduct: Adduct
     _formula: Optional[Formula] = field(default=None, init=False, repr=False)
 
@@ -382,7 +382,7 @@ class FragmentPathway:
         return node
     
     @property
-    def nodes(self) -> Tuple['FragmentPathwayNode']:
+    def nodes(self) -> Tuple['FragmentPathwayNode', ...]:
         return tuple(self.path[i] for i in range(0, len(self.path), 2))
     
     def get_edge(self, index: int) -> 'FragmentPathwayEdge':
@@ -395,7 +395,7 @@ class FragmentPathway:
         return edge
     
     @property
-    def edges(self) -> Tuple['FragmentPathwayEdge']:
+    def edges(self) -> Tuple['FragmentPathwayEdge', ...]:
         return tuple(self.path[i] for i in range(1, len(self.path), 2))
 
     @property
@@ -428,10 +428,10 @@ class FragmentPathway:
         fragment_tree: FragmentTree, 
         node_id: int, 
         adduct_type: Adduct, 
-        precursor_node_indices: Tuple[int],
+        precursor_node_indices: Tuple[int, ...],
         *,
         max_depth: Optional[int] = None,
-        ) -> Tuple['FragmentPathway']:
+        ) -> Tuple['FragmentPathway', ...]:
 
         path = fragment_tree.collect_shortest_paths_via_any_to_root(node_id, precursor_node_indices, max_depth=max_depth)
         if len(path) == 0:
