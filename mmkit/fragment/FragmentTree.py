@@ -192,6 +192,13 @@ class FragmentTree:
         Get the SMILES of the root compound.
         """
         return self._smiles
+
+    @property
+    def node_smiles(self) -> np.ndarray:
+        """
+        Get the array of SMILES for all nodes.
+        """
+        return self._node_smiles
     
     def get_node(self, node_id: int) -> 'FragmentNode':
         """

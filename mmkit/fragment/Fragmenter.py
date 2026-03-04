@@ -145,11 +145,15 @@ class Fragmenter:
             self, 
             compound: Compound, 
             timeout_seconds: float = float('inf'),
+            max_nodes: int = -1,
+            max_edges: int = -1,
             print_info: bool = False,
             ) -> FragmentTree:
         fragment_tree = self._fragment_tree_builder.create_fragment_tree(
             compound,
             timeout_seconds=timeout_seconds,
+            max_nodes=max_nodes,
+            max_edges=max_edges,
             print_info=print_info,
         )
         return fragment_tree
@@ -164,11 +168,15 @@ class Fragmenter:
             self, 
             compound: Compound, 
             timeout_seconds: float = float('inf'),
+            max_nodes: int = -1,
+            max_edges: int = -1,
             print_info: bool = False,
             ) -> 'HydrogenRearrangedFragmentTree':
         fragment_tree = self.create_fragment_tree(
             compound,
             timeout_seconds=timeout_seconds,
+            max_nodes=max_nodes,
+            max_edges=max_edges,
             print_info=print_info,
         )
         return self.assign_hydrogen_rearrangements_to_fragment_tree(fragment_tree)

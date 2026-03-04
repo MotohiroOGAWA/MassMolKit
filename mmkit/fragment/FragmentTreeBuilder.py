@@ -106,6 +106,8 @@ class FragmentTreeBuilder:
             self, 
             compound: Compound, 
             timeout_seconds: float = float('inf'),
+            max_nodes: int = -1,
+            max_edges: int = -1,
             print_info: bool = False,
             ) -> FragmentTree:
                         
@@ -216,6 +218,17 @@ class FragmentTreeBuilder:
                             depth=depth,
                         )
                         new_node_ids.add(tgt_node_idx)
+
+                        if max_nodes > 0 and len(nodes) >= max_nodes:
+                            raise RuntimeError(
+                                f"Maximum number of nodes exceeded: {len(nodes)} >= {max_nodes}"
+                            )
+
+                        if max_edges > 0 and len(edges) >= max_edges:
+                            raise RuntimeError(
+                                f"Maximum number of edges exceeded: {len(edges)} >= {max_edges}"
+                            )
+
                 processed_node_ids.add(node_idx)
             next_node_ids = new_node_ids - processed_node_ids
 
